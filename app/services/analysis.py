@@ -122,8 +122,10 @@ async def run_pipeline(conversation_id: str) -> None:
             )
             return
 
-        # STAGE 4 — draft generation
-        await generate_drafts(conversation_id, conversation_text, analysis, retrieval)
+        # STAGE 4 — draft generation (platform-aware length)
+        await generate_drafts(
+            conversation_id, conversation_text, analysis, retrieval, platform=conv.get("platform", "")
+        )
         log_task("generation", conversation_id, "completed", "4 drafts generated")
 
     except Exception as exc:

@@ -16,6 +16,22 @@ from app.services.retrieval import RetrievalResult, call_llm_with_retry, extract
 
 METADATA_DELIMITER = "---METADATA---"
 
+# Hard character limits per platform for a single post/reply. Drafts are asked to
+# stay safely under these so posting doesn't get rejected.
+PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500}
+
+
+def _length_instruction(platform: str) -> str:
+    limit = PLATFORM_CHAR_LIMITS.get(platform)
+    if limit:
+        # Aim ~20 chars under the hard limit for safety.
+        return (
+            f"CRITICAL: Keep the entire response under {limit - 20} characters "
+            f"({platform} has a hard {limit}-character limit). Be concise and complete — "
+            f"do not exceed this."
+        )
+    return f"Length: between {settings.MIN_DRAFT_WORDS} and {settings.MAX_DRAFT_WORDS} words."
+
 
 def _parse_draft(raw: str) -> tuple[str, dict]:
     """Split a draft response into content and its trailing metadata JSON."""
@@ -30,19 +46,34 @@ def _parse_draft(raw: str) -> tuple[str, dict]:
     return content.strip(), meta if isinstance(meta, dict) else {}
 
 
-async def _generate_one(style: str, conversation_text: str, analysis_json: str, context_block: str) -> dict:
+async def _generate_one(
+    style: str, conversation_text: str, analysis_json: str, context_block: str, platform: str
+) -> dict:
     llm = get_llm(temperature=0.7)
     prompt = GENERATION_PROMPT.format(
         conversation=conversation_text,
         analysis=analysis_json,
         context_block=context_block,
         style_instruction=STYLE_INSTRUCTIONS[style],
-        min_words=settings.MIN_DRAFT_WORDS,
-        max_words=settings.MAX_DRAFT_WORDS,
+        length_instruction=_length_instruction(platform),
     )
     raw = await call_llm_with_retry(llm, prompt)
     content, meta = _parse_draft(raw)
+    # Safety net: hard-trim to the platform limit at a word boundary if the model
+    # still overshoots, so an approved draft can always be posted.
+    limit = PLATFORM_CHAR_LIMITS.get(platform)
+    if limit and len(content) > limit:
+        content = _trim_to(content, limit)
     return {"style": style, "content": content, "meta": meta}
+
+
+def _trim_to(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut.rstrip() + "…"
 
 
 async def generate_drafts(
@@ -50,13 +81,14 @@ async def generate_drafts(
     conversation_text: str,
     analysis: AnalysisResult,
     retrieval: RetrievalResult,
+    platform: str = "",
 ) -> None:
     analysis_json = json.dumps(analysis.model_dump(), indent=2)
 
     def make_branch(style: str):
         async def branch(_):
             return await _generate_one(
-                style, conversation_text, analysis_json, retrieval.context_block
+                style, conversation_text, analysis_json, retrieval.context_block, platform
             )
 
         return RunnableLambda(branch)

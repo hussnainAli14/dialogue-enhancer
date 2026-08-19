@@ -11,6 +11,9 @@ from app.services.connections.factory import get_connector
 # Platforms with a working post_reply / post_exists implementation.
 SUPPORTED_POSTING = {"bluesky", "mastodon"}
 
+# Hard per-post character limits.
+PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500}
+
 
 def _resolve_target(supabase, conversation_id: str, conv: dict) -> dict:
     """Resolve the platform post reference for a conversation — prefer the
@@ -155,6 +158,15 @@ async def publish_reply(conversation_id: str, text: str) -> dict:
     connection = token_store.get_connection(platform)
     if not connection or connection.status != "connected":
         raise ValueError(f"{platform} is not connected. Connect it in Settings first.")
+
+    # Enforce the platform's character limit with a clear message (rather than a
+    # raw API rejection) so the author can shorten via Edit & Approve.
+    limit = PLATFORM_CHAR_LIMITS.get(platform)
+    if limit and len(text) > limit:
+        raise ValueError(
+            f"This reply is {len(text)} characters but {platform}'s limit is {limit}. "
+            f"Use 'Edit & Approve' to shorten it, then post."
+        )
 
     target = _resolve_target(supabase, conversation_id, conv)
     if not target:

@@ -1,0 +1,949 @@
+═══════════════════════════════════════
+WHAT YOU ARE BUILDING — READ THIS FIRST
+═══════════════════════════════════════
+
+This prompt covers Module 4 of the AI Dialogue 
+Enhancer system. You are building the Post Discovery 
+and Scoring engine — the automated background 
+workers that continuously monitor connected social 
+media platforms, fetch relevant posts, score them 
+for relevance using AI, filter the best ones, and 
+automatically trigger the RAG pipeline to analyse 
+them and generate response drafts.
+
+───────────────────────────────────────
+SYSTEM CONTEXT
+───────────────────────────────────────
+
+The AI Dialogue Enhancer helps a coach and author 
+participate more thoughtfully in online conversations. 
+The following modules are already built and running:
+
+Module 1  — Knowledge Base Ingestion
+Module 2  — Platform API Connections
+Module 6  — Knowledge Retrieval (RAG)
+Module 7  — Conversation Analysis and Generation
+Module 8  — Dashboard Frontend (Next.js)
+Module 9  — Approval and Posting Workflow
+Module 10 — Feedback and Learning System
+
+Module 4 is the engine that feeds the entire system. 
+Without it the author has to manually paste 
+conversations into the dashboard. With it the system 
+discovers conversations automatically and the author 
+simply wakes up to a shortlist of ready-to-review 
+drafts every morning.
+
+───────────────────────────────────────
+HOW MODULE 4 FITS INTO THE FULL PIPELINE
+───────────────────────────────────────
+
+The complete automated pipeline once Module 4 
+is running looks like this:
+
+APScheduler triggers discovery worker every 30 min
+        ↓
+Module 4: Call PlatformFetchService.fetch_from_all_platforms()
+  (this is the unified interface built in Module 2)
+        ↓
+Module 4: Deduplicate posts against already seen posts
+        ↓
+Module 4: Score every new post using AI relevance scoring
+        ↓
+Module 4: Filter — keep only posts above score threshold
+        ↓
+Module 4: Rank filtered posts and keep daily top N
+        ↓
+Module 4: For each top post call POST /conversations/submit
+  (this triggers the Module 7 RAG pipeline automatically)
+        ↓
+Module 7: Analyses conversation, retrieves from knowledge 
+  base, generates 3-4 response drafts
+        ↓
+Module 8: Author opens dashboard and sees ready drafts
+        ↓
+Module 9: Author approves, edits, or rejects
+        ↓
+Module 10: Feedback logged for future improvement
+
+───────────────────────────────────────
+WHAT MODULE 4 DOES NOT DO
+───────────────────────────────────────
+
+Module 4 does NOT find or join communities. 
+That is Module 3 which is not yet built.
+For now Module 4 reads the list of communities 
+to monitor from a communities configuration 
+table in the database. This table is populated 
+manually by the author for now and will be 
+managed automatically when Module 3 is built.
+
+Module 4 does NOT post responses. That is Module 9.
+
+Module 4 does NOT generate drafts. That is Module 7.
+Module 4 simply submits conversations to the 
+existing POST /conversations/submit endpoint 
+and Module 7 handles everything from there.
+
+═══════════════════════════════════════
+TECH STACK — LOCKED IN, DO NOT CHANGE
+═══════════════════════════════════════
+
+Backend (additions to existing FastAPI project):
+- Task scheduler: APScheduler 3.x
+  Use AsyncIOScheduler to run inside FastAPI's 
+  event loop without needing a separate process
+  Use IntervalTrigger for scheduled jobs
+- AI scoring: LangChain with the existing LLM 
+  provider (Ollama or OpenAI based on LLM_PROVIDER 
+  environment variable — same as all other modules)
+- Platform fetching: PlatformFetchService from 
+  app/services/connections/factory.py 
+  (built in Module 2)
+- Database: Supabase PostgreSQL (existing)
+- All existing patterns for error handling, 
+  logging, and response envelopes must be followed
+
+Frontend (additions to existing Next.js dashboard):
+- Add a Discovery section to the existing feed page
+- Add worker status indicators to the sidebar
+- Add discovery settings to the existing 
+  settings page
+
+═══════════════════════════════════════
+DATABASE SCHEMA ADDITIONS
+═══════════════════════════════════════
+
+Add these tables in a new migration file:
+supabase/migrations/003_discovery.sql
+
+TABLE: monitored_communities
+This is the list of communities Module 4 monitors.
+It is populated manually for now and will be 
+managed by Module 3 when that is built.
+
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null
+- community_id: TEXT not null
+  (subreddit name, channel id, hashtag, etc)
+- community_name: TEXT not null
+  (human readable name)
+- keywords: TEXT[] not null
+  (array of keywords to filter posts by)
+- is_active: BOOLEAN default true
+- priority: INTEGER default 1
+  (higher number = higher priority, affects 
+  how many posts are fetched from this community)
+- last_fetched_at: TIMESTAMPTZ
+- fetch_count: INTEGER default 0
+- post_count: INTEGER default 0
+- created_at: TIMESTAMPTZ default now()
+- updated_at: TIMESTAMPTZ default now()
+
+Add unique constraint on (platform, community_id)
+
+TABLE: discovered_posts
+Stores every post fetched from any platform 
+before scoring. Acts as a deduplication layer 
+and audit trail.
+
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null
+- post_id: TEXT not null
+  (platform-specific post identifier)
+- post_url: TEXT
+- author_name: TEXT
+- author_id: TEXT
+- title: TEXT
+- content: TEXT not null
+- thread_content: TEXT
+- community_name: TEXT
+- community_id: TEXT
+- posted_at: TIMESTAMPTZ
+- fetched_at: TIMESTAMPTZ default now()
+- engagement_score: FLOAT
+- relevance_score: FLOAT
+  (null until scored)
+- relevance_reasoning: TEXT
+  (AI explanation of why this scored as it did)
+- status: TEXT default 'fetched'
+  (fetched / scoring / scored / submitted / 
+  filtered_out / duplicate / error)
+- conversation_id: UUID references conversations(id)
+  (populated when submitted to Module 7)
+- worker_run_id: UUID
+  (links to the discovery_runs table)
+- created_at: TIMESTAMPTZ default now()
+
+Add unique constraint on (platform, post_id) 
+to prevent duplicates across runs.
+
+TABLE: discovery_runs
+A log of every time the discovery worker runs.
+
+- id: UUID primary key default gen_random_uuid()
+- trigger_type: TEXT not null
+  (scheduled / manual / api)
+- status: TEXT default 'running'
+  (running / completed / failed / partial)
+- platforms_checked: TEXT[]
+- posts_fetched: INTEGER default 0
+- posts_scored: INTEGER default 0
+- posts_submitted: INTEGER default 0
+- posts_filtered: INTEGER default 0
+- posts_duplicated: INTEGER default 0
+- error_message: TEXT
+- started_at: TIMESTAMPTZ default now()
+- completed_at: TIMESTAMPTZ
+- duration_seconds: FLOAT
+
+TABLE: discovery_settings
+A single-row configuration table for all 
+discovery settings. Module 11 will add a 
+proper settings API later. For now these 
+values are set by inserting a row manually 
+or via a seed endpoint.
+
+- id: UUID primary key default gen_random_uuid()
+- is_enabled: BOOLEAN default true
+  (master switch to pause all discovery)
+- schedule_interval_minutes: INTEGER default 30
+  (how often the scheduled worker runs)
+- max_posts_per_run: INTEGER default 50
+  (maximum posts to fetch per platform per run)
+- max_conversations_per_day: INTEGER default 5
+  (maximum conversations to submit to Module 7 
+  per day regardless of how many score well)
+- min_relevance_score: FLOAT default 0.65
+  (minimum score to pass filtering)
+- scoring_batch_size: INTEGER default 10
+  (how many posts to score in one LLM call)
+- updated_at: TIMESTAMPTZ default now()
+
+Insert one default row when this migration runs:
+INSERT INTO discovery_settings 
+(is_enabled, schedule_interval_minutes, 
+max_posts_per_run, max_conversations_per_day,
+min_relevance_score, scoring_batch_size)
+VALUES (true, 30, 50, 5, 0.65, 10);
+
+═══════════════════════════════════════
+ENVIRONMENT VARIABLES — ADD THESE
+═══════════════════════════════════════
+
+Add to existing .env.example:
+
+DISCOVERY_ENABLED=true
+DISCOVERY_SCHEDULE_MINUTES=30
+MAX_POSTS_PER_RUN=50
+MAX_CONVERSATIONS_PER_DAY=5
+MIN_RELEVANCE_SCORE=0.65
+
+═══════════════════════════════════════
+PROJECT STRUCTURE — NEW FILES TO ADD
+═══════════════════════════════════════
+
+Add these to the existing project:
+
+app/
+  routers/
+    discovery.py         — discovery management endpoints
+  
+  services/
+    discovery/
+      __init__.py
+      worker.py          — main discovery worker logic
+      scorer.py          — AI relevance scoring service
+      deduplicator.py    — post deduplication logic
+      submitter.py       — submits posts to Module 7
+      scheduler.py       — APScheduler setup and management
+  
+  models/
+    discovery.py         — Pydantic models for discovery
+
+supabase/
+  migrations/
+    003_discovery.sql
+
+═══════════════════════════════════════
+SCHEDULER SETUP
+═══════════════════════════════════════
+
+Build app/services/discovery/scheduler.py
+
+Use APScheduler's AsyncIOScheduler.
+
+Initialise the scheduler when the FastAPI app 
+starts using a lifespan context manager in 
+app/main.py. Shut it down cleanly when the 
+app stops.
+
+The scheduler runs one job: the discovery worker.
+
+The interval is read from the discovery_settings 
+table on startup. If the table cannot be read 
+fall back to the DISCOVERY_SCHEDULE_MINUTES 
+environment variable.
+
+The scheduler must check discovery_settings.is_enabled 
+before every run. If is_enabled is false log that 
+discovery is paused and skip the run without 
+unscheduling the job. This allows the author to 
+pause discovery from the dashboard without 
+restarting the server.
+
+The scheduler must also enforce the 
+max_conversations_per_day limit by checking how 
+many conversations have been submitted today 
+(created_at >= today midnight UTC) before 
+submitting more. If the daily limit is already 
+reached skip submission for that run but still 
+fetch and score for the audit log.
+
+Build these functions in scheduler.py:
+
+start_scheduler() -> None
+Initialises and starts the AsyncIOScheduler.
+Adds the discovery job with the configured interval.
+Logs scheduler started to processing_logs.
+
+stop_scheduler() -> None
+Shuts down the scheduler gracefully.
+
+reschedule(interval_minutes: int) -> None
+Updates the job interval without restarting 
+the scheduler. Called when settings change.
+
+get_status() -> SchedulerStatus
+Returns whether the scheduler is running, 
+the next run time, and the current interval.
+
+trigger_now() -> str
+Triggers an immediate run outside the schedule.
+Returns a run_id for tracking.
+
+═══════════════════════════════════════
+DISCOVERY WORKER
+═══════════════════════════════════════
+
+Build app/services/discovery/worker.py
+
+This is the main orchestrator that runs on 
+every scheduled or manual trigger.
+
+Build a DiscoveryWorker class with one primary 
+public method:
+
+async run(trigger_type: str = 'scheduled') 
+-> DiscoveryRunResult
+
+The run method must execute these steps in order:
+
+STEP 1 — INITIALISE RUN:
+Create a new record in discovery_runs with 
+status running and trigger_type.
+Read current settings from discovery_settings.
+Check is_enabled — if false mark run as completed 
+with message discovery paused and return early.
+Check daily conversation count — if 
+max_conversations_per_day already reached mark 
+run as completed with message daily limit reached 
+and return early.
+Log run started to processing_logs.
+
+STEP 2 — FETCH COMMUNITIES:
+Read all active communities from 
+monitored_communities where is_active is true.
+Group them by platform:
+{
+  "reddit": [
+    {"community_id": "leadership", 
+     "keywords": ["coaching", "growth"]},
+    ...
+  ],
+  "bluesky": [...],
+  ...
+}
+If no communities are configured log a warning 
+and return early with a helpful message.
+
+STEP 3 — FETCH POSTS:
+Call PlatformFetchService.fetch_from_all_platforms() 
+with:
+  keywords: all unique keywords across all communities
+  communities: the grouped communities dict
+  since: the latest last_fetched_at across all 
+    communities for each platform, or 24 hours 
+    ago if never fetched before
+  limit_per_platform: max_posts_per_run from settings
+
+Update last_fetched_at and fetch_count for each 
+community that was successfully fetched.
+Update posts_fetched count in the discovery_runs 
+record.
+
+STEP 4 — DEDUPLICATE:
+Call Deduplicator.filter_new(posts) to remove 
+any posts that already exist in discovered_posts 
+based on (platform, post_id).
+Update posts_duplicated count in discovery_runs.
+Insert all new posts into discovered_posts with 
+status fetched.
+
+STEP 5 — SCORE:
+Call Scorer.score_batch(new_posts, settings) 
+to score all new posts for relevance.
+Update each discovered_post record with its 
+relevance_score, relevance_reasoning, and 
+status scored.
+Update posts_scored count in discovery_runs.
+
+STEP 6 — FILTER AND RANK:
+Filter posts where relevance_score >= 
+min_relevance_score from settings.
+Sort filtered posts by relevance_score descending.
+Calculate how many more conversations can be 
+submitted today without exceeding 
+max_conversations_per_day.
+Take only that many top posts.
+Mark all other filtered-out posts in 
+discovered_posts with status filtered_out.
+
+STEP 7 — SUBMIT TO MODULE 7:
+For each top post call Submitter.submit(post).
+The submitter calls POST /conversations/submit 
+on the existing backend API with the post data.
+On success update the discovered_post record 
+with status submitted and the returned 
+conversation_id.
+On failure update with status error and log.
+Update posts_submitted count in discovery_runs.
+
+STEP 8 — COMPLETE RUN:
+Update discovery_runs record with status completed,
+completed_at, duration_seconds, and all counts.
+Log run completed to processing_logs with a 
+summary message.
+Return DiscoveryRunResult with all counts and 
+the run_id.
+
+STEP 9 — ERROR HANDLING:
+If any unhandled exception occurs during the run:
+Update discovery_runs with status failed and 
+the error message.
+Log to processing_logs with status failed.
+Never let the worker crash the FastAPI server — 
+all exceptions must be caught at the top level 
+of the run method.
+
+═══════════════════════════════════════
+RELEVANCE SCORER
+═══════════════════════════════════════
+
+Build app/services/discovery/scorer.py
+
+The scorer uses the active LLM (Ollama or OpenAI 
+based on LLM_PROVIDER) to evaluate how relevant 
+each post is for the author to respond to.
+
+Build a Scorer class with these methods:
+
+async score_batch(
+  posts: list[UniversalPost],
+  settings: DiscoverySettings
+) -> list[ScoredPost]
+
+Scores posts in batches of scoring_batch_size 
+from settings. For each batch call score_single_batch.
+
+async score_single_batch(
+  posts: list[UniversalPost]
+) -> list[ScoredPost]
+
+Sends one LLM call that scores all posts in 
+the batch at once to minimise API calls.
+
+The scoring prompt must:
+
+Describe the author as a coach and author with 
+fifteen years of experience in coaching, leadership, 
+personal growth, spirituality, and community building.
+
+Instruct the model that the author wants to 
+participate in conversations where they can make 
+a genuinely valuable contribution — not just 
+any conversation on these topics.
+
+For each post provide: platform, community, 
+author, title if available, first 300 characters 
+of content.
+
+Ask the model to score each post from 0.0 to 1.0 
+on these four criteria and return the weighted 
+average as the final score:
+
+  Topic Relevance (weight 0.35):
+  How closely does this post relate to coaching, 
+  leadership, personal growth, spirituality, 
+  or community? Score 0 if completely off-topic, 
+  1 if directly on topic.
+
+  Contribution Opportunity (weight 0.35):
+  How much genuine value could the author add 
+  to this conversation? Score 0 if the conversation 
+  is already saturated or needs no input, 1 if 
+  there is a clear gap the author could fill.
+
+  Discussion Quality (weight 0.20):
+  How thoughtful and substantive is this conversation? 
+  Score 0 if it is superficial, promotional, or 
+  toxic, 1 if it is a genuine deep discussion.
+
+  Audience Fit (weight 0.10):
+  How well does this audience match the author's 
+  typical readership? Score 0 if clearly wrong 
+  audience, 1 if perfect fit.
+
+The model must return ONLY valid JSON in this format:
+{
+  "scores": [
+    {
+      "post_id": "platform:post_id",
+      "final_score": 0.82,
+      "topic_relevance": 0.90,
+      "contribution_opportunity": 0.85,
+      "discussion_quality": 0.75,
+      "audience_fit": 0.70,
+      "reasoning": "one sentence explanation"
+    }
+  ]
+}
+
+Parse the JSON strictly. If parsing fails retry 
+once with explicit JSON-only instruction. If 
+second attempt fails assign a score of 0.0 to 
+all posts in that batch and log the error.
+
+Also build a score_single method for scoring 
+one post individually used when a post is 
+submitted manually via the API:
+
+async score_single(post: UniversalPost) -> ScoredPost
+
+═══════════════════════════════════════
+DEDUPLICATOR
+═══════════════════════════════════════
+
+Build app/services/discovery/deduplicator.py
+
+Build a Deduplicator class with these methods:
+
+async filter_new(
+  posts: list[UniversalPost]
+) -> list[UniversalPost]
+
+Checks each post against the discovered_posts 
+table using the unique (platform, post_id) 
+constraint. Returns only posts that do not 
+already exist in the table.
+
+Do this efficiently with a single database 
+query that checks all post_ids at once rather 
+than one query per post.
+
+async is_duplicate(
+  platform: str, 
+  post_id: str
+) -> bool
+
+Checks a single post. Used by the manual 
+submission endpoint.
+
+async mark_duplicate(
+  platform: str, 
+  post_id: str
+) -> None
+
+Updates an existing discovered_post record 
+to status duplicate when the same post is 
+encountered in a later run.
+
+═══════════════════════════════════════
+SUBMITTER
+═══════════════════════════════════════
+
+Build app/services/discovery/submitter.py
+
+Build a Submitter class with one primary method:
+
+async submit(post: UniversalPost) -> str
+
+Submits a post to the existing Module 7 
+conversation pipeline by calling 
+POST /conversations/submit internally.
+
+Do NOT make an HTTP request to the API endpoint. 
+Instead import and call the conversation 
+submission service function directly to avoid 
+the overhead of an internal HTTP round-trip.
+
+The submission data must map UniversalPost 
+fields to the conversations schema:
+  platform: post.platform
+  post_url: post.post_url
+  post_author: post.author_name
+  original_post: post.content
+  full_thread: post.thread_content
+
+Returns the conversation_id of the created 
+conversation.
+
+On any error log to processing_logs and 
+re-raise so the worker can handle it.
+
+═══════════════════════════════════════
+DISCOVERY ROUTER
+═══════════════════════════════════════
+
+Build app/routers/discovery.py with these endpoints:
+
+GET /discovery/status
+Returns the current state of the discovery system:
+  scheduler_running: boolean
+  is_enabled: boolean
+  next_run_at: datetime or null
+  schedule_interval_minutes: integer
+  last_run: latest discovery_runs record summary
+  today_submitted: count of conversations submitted today
+  today_limit: max_conversations_per_day setting
+  connected_platforms: list of connected platform names
+  monitored_communities: count of active communities
+
+POST /discovery/trigger
+Triggers an immediate discovery run outside 
+the schedule. Returns run_id immediately.
+The run executes as a FastAPI BackgroundTask.
+
+GET /discovery/runs
+Returns paginated list of discovery_runs records.
+Include all count fields and duration.
+Support filtering by status and trigger_type.
+20 per page ordered by started_at descending.
+
+GET /discovery/runs/{run_id}
+Returns full details of one run including 
+a breakdown of posts fetched, scored, 
+filtered, and submitted.
+
+GET /discovery/posts
+Returns paginated list of discovered_posts.
+Support filtering by: platform, status, 
+min_relevance_score, date range.
+Order by relevance_score descending by default.
+20 per page.
+
+GET /discovery/posts/{post_id}
+Returns full details of one discovered post 
+including its scoring breakdown and reasoning, 
+and the conversation_id if it was submitted.
+
+POST /discovery/posts/{post_id}/submit
+Manually submit a specific discovered post 
+to the Module 7 pipeline, even if it was 
+previously filtered out.
+Useful for the author to manually promote 
+a post they think is worth analysing.
+
+GET /discovery/communities
+Returns all records from monitored_communities.
+Group by platform in the response.
+
+POST /discovery/communities
+Add a new community to monitor.
+Body: platform, community_id, community_name, 
+keywords array, priority.
+Validates that the platform is one of the 
+supported platforms.
+Validates that a connection exists for that 
+platform in platform_connections.
+Returns the created community record.
+
+PATCH /discovery/communities/{community_id}
+Update a community — keywords, priority, 
+is_active toggle.
+
+DELETE /discovery/communities/{community_id}
+Remove a community from monitoring.
+
+POST /discovery/settings
+Update discovery settings.
+Body: any subset of discovery_settings fields.
+After updating reschedule the APScheduler job 
+if schedule_interval_minutes changed.
+Returns updated settings.
+
+GET /discovery/settings
+Returns current discovery_settings record.
+
+═══════════════════════════════════════
+FRONTEND UPDATES
+═══════════════════════════════════════
+
+Make these additions to the existing Next.js 
+dashboard. These updates build on the existing 
+components and design system.
+
+───────────────────────────────────────
+UPDATE 1 — SIDEBAR STATUS INDICATOR
+───────────────────────────────────────
+
+Add a discovery status indicator to the bottom 
+of the existing sidebar above the API connection 
+status indicator.
+
+Show either:
+Discovery Running — accent colour dot + text
+  with the next run time in secondary text
+  e.g. Next run in 14 minutes
+Discovery Paused — warning colour dot + text
+Scheduler Stopped — danger colour dot + text
+
+Poll GET /discovery/status every 60 seconds 
+to keep this updated.
+
+───────────────────────────────────────
+UPDATE 2 — FEED PAGE TOP BAR
+───────────────────────────────────────
+
+Add one more stat chip to the existing top 
+summary bar on the feed page:
+
+Discovered Today: count of posts fetched today
+  with a subtle refresh icon that triggers 
+  POST /discovery/trigger when clicked
+  Show a loading spinner on the icon while 
+  a manual trigger is in progress
+  Show a success toast when the trigger completes
+
+───────────────────────────────────────
+UPDATE 3 — NEW DISCOVERY PAGE
+───────────────────────────────────────
+
+Add a new page to the dashboard: /discovery
+
+Add it to the sidebar navigation between 
+Conversations and Submit with a radar icon.
+Label: Discovery
+
+This page has four tabs:
+
+TAB 1 — Overview:
+Show the full output of GET /discovery/status 
+in a clean layout.
+Show a large Run Discovery Now button that 
+calls POST /discovery/trigger.
+Show a master on/off toggle for is_enabled 
+that calls POST /discovery/settings.
+Show a timeline of the last 5 discovery runs 
+as a simple vertical list with status badges, 
+post counts, and duration.
+Auto-refresh every 30 seconds.
+
+TAB 2 — Posts:
+Show the list of all discovered posts from 
+GET /discovery/posts.
+Each post card shows:
+  Platform badge
+  Community name
+  First 150 characters of content
+  Relevance score as a coloured badge
+    (green above 0.8, yellow 0.65-0.8, 
+    red below 0.65)
+  Scoring breakdown on hover (four criteria 
+  scores as a small tooltip)
+  AI reasoning in secondary text
+  Status badge
+  If status is filtered_out show a 
+  Submit Anyway button that calls 
+  POST /discovery/posts/{id}/submit
+  If status is submitted show a 
+  View Conversation link to /conversations/{id}
+Filter bar: platform, status, min score slider
+Pagination 20 per page.
+
+TAB 3 — Communities:
+Show all monitored communities grouped 
+by platform.
+Each community card shows:
+  Platform badge
+  Community name and ID
+  Keywords as chips
+  Priority indicator
+  is_active toggle
+  Last fetched time
+  Post count fetched so far
+  Edit and Remove buttons
+
+Add Community button opens a slide-over panel 
+on the right with the add community form:
+  Platform dropdown
+  Community ID input with helper text 
+  showing the format for each platform
+  Community Name input
+  Keywords input (tag-style chip input)
+  Priority slider 1-5
+  Save button
+
+TAB 4 — Run History:
+Full table of all discovery_runs records.
+Columns: Trigger, Status, Fetched, Scored, 
+Submitted, Filtered, Duration, Started At
+Click a row to expand it and show the 
+full run details.
+Filter by status and trigger type.
+Pagination 20 per page.
+
+───────────────────────────────────────
+UPDATE 4 — SETTINGS PAGE ADDITIONS
+───────────────────────────────────────
+
+Add a Discovery Settings section to the 
+existing /settings page below the Platform 
+Connections section.
+
+Fields:
+Discovery Enabled: toggle switch
+Schedule Interval: number input in minutes 
+  with helper text showing next run time 
+  based on current value
+Max Posts Per Run: number input
+Max Conversations Per Day: number input 
+  with helper text: The system will stop 
+  submitting conversations for today once 
+  this limit is reached
+Minimum Relevance Score: slider 0 to 1 
+  with value displayed as percentage
+  with helper text: Posts below this score 
+  will be fetched and stored but not 
+  submitted for analysis
+
+Save Discovery Settings button calls 
+POST /discovery/settings and shows 
+success or error toast.
+
+═══════════════════════════════════════
+SEED DATA
+═══════════════════════════════════════
+
+Generate a seed SQL file that inserts a 
+starter set of monitored communities so 
+the system has something to discover from 
+immediately after setup:
+
+supabase/seeds/communities.sql
+
+Include these starter communities:
+
+Reddit:
+  r/leadership — keywords: leadership, coaching, 
+    management, team dynamics, accountability
+  r/personaldevelopment — keywords: personal growth, 
+    habits, mindset, self improvement
+  r/psychology — keywords: behaviour, motivation, 
+    relationships, community
+  r/Entrepreneur — keywords: leadership, culture, 
+    team, coaching
+
+Bluesky:
+  leadership — keyword hashtag
+  coaching — keyword hashtag
+  personalgrowth — keyword hashtag
+  community — keyword hashtag
+
+Mastodon:
+  leadership — hashtag
+  coaching — hashtag
+  personaldevelopment — hashtag
+
+Discord:
+  Leave empty — user must add their own 
+  Discord server channel IDs manually
+
+Telegram:
+  Leave empty — user must add their own 
+  Telegram channel usernames manually
+
+YouTube:
+  keywords only — no specific channels:
+  leadership coaching, personal growth, 
+  community building, executive coaching
+
+═══════════════════════════════════════
+ERROR HANDLING AND RELIABILITY
+═══════════════════════════════════════
+
+The discovery worker must be completely 
+fault-tolerant. A failure in any single 
+platform or post must never stop the 
+rest of the run.
+
+Platform-level isolation:
+Wrap each platform's fetch in its own 
+try/except. If Reddit fails still process 
+Bluesky, Mastodon, and all others.
+Log platform failures to platform_connection_logs.
+
+Post-level isolation:
+Wrap each post's scoring and submission 
+in its own try/except. A bad post must 
+not stop the rest of the batch.
+
+Scheduler resilience:
+If the scheduler job raises an unhandled 
+exception APScheduler will catch it and 
+continue scheduling future runs. But also 
+wrap the entire worker run method in a 
+top-level try/except to ensure the 
+discovery_runs record is always updated 
+with failed status even if something 
+unexpected happens.
+
+Daily limit enforcement:
+The daily conversation limit check must 
+happen in two places: at the start of 
+the run AND just before each submission 
+in case another run submitted conversations 
+while this run was in progress. Use a 
+database-level check not an in-memory 
+counter to ensure accuracy across 
+concurrent runs.
+
+Duplicate prevention:
+The unique constraint on (platform, post_id) 
+in discovered_posts acts as the final 
+safety net against duplicates even if 
+the Deduplicator misses something. 
+Handle the constraint violation error 
+gracefully — treat it as a duplicate 
+and continue.
+
+═══════════════════════════════════════
+README ADDITIONS
+═══════════════════════════════════════
+
+Add a Discovery System section to the 
+existing README.md covering:
+
+1. How the discovery worker works end to end
+2. How to add communities to monitor via 
+   the dashboard or directly in the database
+3. How to run the seed communities SQL file
+4. How to trigger a manual discovery run
+5. How to pause and resume discovery
+6. How to tune the relevance score threshold
+7. Understanding the daily conversation limit
+8. Monitoring run history and post scores
+9. Troubleshooting: what to do if no posts 
+   are being discovered
+10. Troubleshooting: what to do if the 
+    scheduler stops running

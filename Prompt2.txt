@@ -1,0 +1,894 @@
+═══════════════════════════════════════
+WHAT YOU ARE BUILDING — READ THIS FIRST
+═══════════════════════════════════════
+
+You are building the complete frontend dashboard for an 
+AI Dialogue Enhancer system. This is Module 8 of a larger 
+system. The backend API is already built and running. Your 
+job is to build the web interface that the author uses 
+every day to review conversations, approve response drafts, 
+manage their knowledge base, and monitor their feedback 
+history.
+
+───────────────────────────────────────
+THE SYSTEM CONTEXT
+───────────────────────────────────────
+
+The AI Dialogue Enhancer helps a coach and author participate 
+more thoughtfully in online conversations across social media 
+platforms including Reddit, Bluesky, Mastodon, Discord, 
+Telegram, Threads, YouTube, Facebook, LinkedIn, and Instagram.
+
+The backend does the following automatically:
+- Monitors social media platforms for relevant conversations
+- Searches the author's 15 years of writing to find relevant 
+  ideas using RAG (Retrieval Augmented Generation)
+- Analyses each conversation to decide if the author should 
+  comment or not
+- Generates 3 to 4 response drafts in different styles 
+  grounded in the author's own writing
+- Stores everything in a PostgreSQL database via Supabase
+
+The dashboard is where the author spends 10 to 15 minutes 
+each day. They open it, see today's shortlisted conversations 
+with ready-made response drafts, and approve, edit, or reject 
+each one. Approved responses are posted to the platform 
+automatically.
+
+This is not a busy social media management tool. It is a 
+calm, focused, single-user interface designed for deep 
+reading and thoughtful decision making. The design must 
+reflect that.
+
+───────────────────────────────────────
+THE BACKEND API
+───────────────────────────────────────
+
+The backend is a Python FastAPI server. All endpoints 
+return this response envelope:
+
+{
+  "success": boolean,
+  "data": object or null,
+  "error": string or null,
+  "timestamp": ISO timestamp string
+}
+
+The base URL is read from environment variable:
+NEXT_PUBLIC_API_URL
+
+All API calls are made from the frontend using fetch 
+or axios. There is no authentication system yet — 
+this is a single user private tool so no login is 
+required for the MVP.
+
+Available backend endpoints:
+
+KNOWLEDGE BASE:
+GET    /knowledge/documents
+GET    /knowledge/documents/{id}
+POST   /knowledge/upload (multipart)
+DELETE /knowledge/documents/{id}
+POST   /knowledge/documents/{id}/reindex
+GET    /knowledge/documents/stats
+
+CONVERSATIONS:
+GET    /conversations
+GET    /conversations/{id}
+POST   /conversations/submit
+
+DRAFTS:
+POST   /drafts/{id}/approve
+POST   /drafts/{id}/edit-and-approve (body: edited_content)
+POST   /drafts/{id}/reject (body: rejection_reason optional)
+POST   /drafts/{id}/save
+POST   /drafts/{id}/mark-posted
+GET    /drafts/feedback-summary
+
+═══════════════════════════════════════
+TECH STACK — LOCKED IN, DO NOT CHANGE
+═══════════════════════════════════════
+
+- Framework: Next.js 14 with App Router
+- Language: TypeScript throughout — no plain JavaScript files
+- Styling: Tailwind CSS
+- Component library: None — build all components from 
+  scratch using Tailwind only
+- Icons: Lucide React
+- HTTP client: axios with a centralised API client module
+- State management: React useState and useContext only — 
+  no Redux, no Zustand, no external state libraries
+- Data fetching: Custom hooks using useEffect and axios — 
+  no React Query, no SWR
+- Date formatting: date-fns
+- Environment variables: Next.js built-in .env.local support
+- Notifications and toasts: Build a simple custom toast 
+  component — no external toast libraries
+- Animations: Tailwind CSS transitions only — no Framer 
+  Motion or other animation libraries
+- No other external libraries unless absolutely necessary
+
+═══════════════════════════════════════
+VISUAL DESIGN — LOCKED IN
+═══════════════════════════════════════
+
+THEME: Dark mode professional. The entire dashboard uses 
+a dark background with high contrast text and subtle 
+borders. It should feel like a focused professional tool 
+not a consumer app.
+
+COLOUR PALETTE — use these exact values as Tailwind 
+custom colours defined in tailwind.config.ts:
+
+background:       #0A0F1E  (deepest background)
+surface:          #111827  (card and panel background)
+surface-raised:   #1A2235  (elevated cards, hover states)
+border:           #1E2D45  (subtle borders)
+border-bright:    #2D4A6B  (active borders, focus rings)
+accent:           #1E5FA8  (primary brand blue)
+accent-hover:     #2570C4  (hover state for accent)
+accent-light:     #3B82F6  (lighter blue for highlights)
+text-primary:     #F0F4F8  (main text)
+text-secondary:   #8A9BB5  (secondary text, labels)
+text-muted:       #4A5568  (muted text, placeholders)
+success:          #10B981  (approved, ready states)
+warning:          #F59E0B  (pending, draft states)
+danger:           #EF4444  (rejected, error states)
+info:             #6366F1  (info states, skipped)
+
+TYPOGRAPHY:
+- Font: Inter (load from Google Fonts)
+- Page titles: text-2xl font-semibold text-primary
+- Section headings: text-lg font-medium text-primary
+- Body text: text-sm text-primary
+- Secondary text: text-sm text-secondary
+- Labels and metadata: text-xs text-muted
+
+SPACING: Use generous padding inside cards (p-6) and 
+comfortable gaps between elements (gap-4 or gap-6). 
+The interface should feel spacious not cramped.
+
+BORDERS: All cards and panels use a 1px border in the 
+border colour with rounded-xl corners.
+
+SHADOWS: No heavy shadows. Use border colours to 
+define depth instead.
+
+PLATFORM BADGES: Each social media platform gets a 
+small coloured badge:
+reddit:    bg-orange-500/20 text-orange-400
+bluesky:   bg-sky-500/20 text-sky-400
+mastodon:  bg-purple-500/20 text-purple-400
+discord:   bg-indigo-500/20 text-indigo-400
+telegram:  bg-blue-400/20 text-blue-300
+threads:   bg-gray-500/20 text-gray-300
+youtube:   bg-red-500/20 text-red-400
+facebook:  bg-blue-600/20 text-blue-400
+linkedin:  bg-blue-700/20 text-blue-300
+instagram: bg-pink-500/20 text-pink-400
+twitter:   bg-sky-400/20 text-sky-300
+
+STATUS BADGES:
+pending:   bg-warning/20 text-warning
+approved:  bg-success/20 text-success
+edited:    bg-success/20 text-success
+rejected:  bg-danger/20 text-danger
+saved:     bg-accent/20 text-accent-light
+posted:    bg-success/20 text-success border 
+           border-success/40
+skipped:   bg-info/20 text-info
+error:     bg-danger/20 text-danger
+
+═══════════════════════════════════════
+PROJECT STRUCTURE
+═══════════════════════════════════════
+
+Build the project with this exact structure:
+
+app/
+  layout.tsx              — root layout with sidebar
+  page.tsx                — redirects to /feed
+  
+  feed/
+    page.tsx              — Today's Feed (main view)
+  
+  conversations/
+    page.tsx              — all conversations list
+    [id]/
+      page.tsx            — single conversation detail view
+  
+  knowledge/
+    page.tsx              — knowledge base manager
+  
+  submit/
+    page.tsx              — manual conversation submission form
+  
+  history/
+    page.tsx              — feedback history and stats
+  
+  settings/
+    page.tsx              — settings and configuration
+  
+  community/
+    page.tsx              — community manager
+
+components/
+  layout/
+    Sidebar.tsx           — left navigation sidebar
+    TopBar.tsx            — top bar with page title and actions
+    Layout.tsx            — wrapper combining sidebar and topbar
+  
+  feed/
+    ConversationCard.tsx  — card shown in the feed list
+    PlatformBadge.tsx     — coloured platform label
+    StatusBadge.tsx       — coloured status label
+    RelevanceScore.tsx    — visual relevance score indicator
+  
+  conversation/
+    ConversationThread.tsx  — displays the full post and replies
+    AnalysisPanel.tsx       — displays the AI conversation analysis
+    DraftCard.tsx           — single response draft with actions
+    DraftGrid.tsx           — grid of all 4 drafts side by side
+    SourceBadge.tsx         — shows which documents informed a draft
+  
+  knowledge/
+    DocumentList.tsx      — list of all uploaded documents
+    DocumentCard.tsx      — single document with status and actions
+    UploadForm.tsx        — drag and drop file upload form
+    StatsBar.tsx          — total docs, chunks, tokens display
+  
+  history/
+    FeedbackStats.tsx     — approval rate, edit rate, rejection rate
+    FeedbackTable.tsx     — table of all past decisions
+    StylePerformance.tsx  — which draft styles perform best
+  
+  community/
+    CommunityList.tsx     — list of monitored communities
+    AddCommunityForm.tsx  — form to add new community or keyword
+    PlatformFilter.tsx    — filter communities by platform
+  
+  shared/
+    Button.tsx            — reusable button component
+    Input.tsx             — reusable input component
+    Textarea.tsx          — reusable textarea component
+    Select.tsx            — reusable select dropdown
+    Modal.tsx             — reusable modal overlay
+    Toast.tsx             — toast notification system
+    LoadingSpinner.tsx    — loading state indicator
+    EmptyState.tsx        — empty state with icon and message
+    ErrorState.tsx        — error state with retry option
+    ConfirmDialog.tsx     — confirmation modal for destructive actions
+
+hooks/
+  useConversations.ts     — fetch and manage conversations list
+  useConversation.ts      — fetch single conversation with drafts
+  useKnowledge.ts         — fetch and manage knowledge base
+  useFeedback.ts          — fetch feedback summary and history
+  useToast.ts             — toast notification management
+
+lib/
+  api.ts                  — centralised axios API client
+  types.ts                — all TypeScript type definitions
+  utils.ts                — helper functions (dates, text, etc)
+  constants.ts            — platform names, style labels, etc
+
+.env.local.example
+tailwind.config.ts
+tsconfig.json
+next.config.ts
+README.md
+
+═══════════════════════════════════════
+TYPE DEFINITIONS
+═══════════════════════════════════════
+
+Define all these types in lib/types.ts:
+
+Document:
+  id: string
+  filename: string
+  file_type: string
+  source_type: string
+  title: string | null
+  author: string | null
+  published_date: string | null
+  word_count: number | null
+  status: 'processing' | 'ready' | 'error'
+  error_message: string | null
+  chunk_count: number
+  created_at: string
+
+DocumentChunk:
+  id: string
+  document_id: string
+  chunk_index: number
+  content: string
+  token_count: number | null
+
+KnowledgeStats:
+  total_documents: number
+  total_chunks: number
+  total_tokens: number
+
+Conversation:
+  id: string
+  platform: string
+  post_url: string | null
+  post_author: string | null
+  original_post: string
+  full_thread: string | null
+  submitted_at: string
+  analysis_status: 'pending' | 'analysed' | 'skipped' | 'error'
+  draft_count: number
+  relevance_score: number | null
+
+ConversationDetail extends Conversation:
+  analysis: ConversationAnalysis | null
+  drafts: ResponseDraft[]
+
+ConversationAnalysis:
+  id: string
+  conversation_id: string
+  central_topic: string
+  key_tensions: string[]
+  viewpoints_represented: string[]
+  emotional_sensitivities: string
+  can_add_value: boolean
+  value_reasoning: string
+  participation_recommendation: 'COMMENT' | 'DO_NOT_COMMENT'
+  recommendation_reason: string
+  relevance_score: number
+  created_at: string
+
+ResponseDraft:
+  id: string
+  conversation_id: string
+  style: 'insightful_contribution' | 'facilitative_question' 
+       | 'synthesis_of_viewpoints' | 'constructive_challenge'
+  content: string
+  value_explanation: string | null
+  source_document_titles: string[]
+  include_link: boolean
+  suggested_link: string | null
+  status: 'pending' | 'approved' | 'edited' | 'rejected' 
+        | 'saved' | 'posted'
+  edited_content: string | null
+  rejection_reason: string | null
+  approved_at: string | null
+  posted_at: string | null
+  created_at: string
+
+FeedbackSummary:
+  total_drafts_generated: number
+  approval_rate: number
+  edit_rate: number
+  rejection_rate: number
+  most_common_rejection_reasons: Array<{reason: string, count: number}>
+  best_performing_styles: Array<{style: string, approval_rate: number}>
+  average_edit_length_vs_original: number
+
+ApiResponse<T>:
+  success: boolean
+  data: T | null
+  error: string | null
+  timestamp: string
+
+═══════════════════════════════════════
+API CLIENT
+═══════════════════════════════════════
+
+Build lib/api.ts as a centralised API client module.
+
+Create an axios instance with:
+- baseURL from NEXT_PUBLIC_API_URL environment variable
+- Content-Type application/json header as default
+- 30 second timeout
+
+Export typed async functions for every backend endpoint. 
+Each function must:
+- Call the correct endpoint with correct method and params
+- Return the typed data from the response envelope
+- Throw a descriptive error if success is false or if 
+  the network request fails
+- Handle multipart form data correctly for file uploads
+
+Group functions by module:
+
+knowledgeApi:
+  getDocuments(): Promise<Document[] & KnowledgeStats>
+  getDocument(id): Promise<DocumentDetail>
+  uploadDocument(file, metadata): Promise<Document>
+  deleteDocument(id): Promise<void>
+  reindexDocument(id): Promise<void>
+
+conversationsApi:
+  getConversations(filters): Promise<ConversationListResponse>
+  getConversation(id): Promise<ConversationDetail>
+  submitConversation(data): Promise<Conversation>
+
+draftsApi:
+  approveDraft(id): Promise<ResponseDraft>
+  editAndApproveDraft(id, editedContent): Promise<ResponseDraft>
+  rejectDraft(id, reason?): Promise<ResponseDraft>
+  saveDraft(id): Promise<ResponseDraft>
+  markPosted(id): Promise<ResponseDraft>
+  getFeedbackSummary(): Promise<FeedbackSummary>
+
+═══════════════════════════════════════
+SECTION 1 — TODAY'S FEED (/feed)
+═══════════════════════════════════════
+
+This is the home screen and the most important page.
+The author opens this every morning.
+
+LAYOUT:
+Full width page with a top summary bar and a list of 
+conversation cards below.
+
+TOP SUMMARY BAR:
+Show three stat chips in a row:
+- Conversations today: count of conversations submitted 
+  in the last 24 hours
+- Awaiting review: count with status analysed and at 
+  least one pending draft
+- Posted today: count of drafts with posted status 
+  in the last 24 hours
+
+CONVERSATION CARDS:
+Each card in the feed represents one conversation that 
+has been analysed and has pending drafts ready for review.
+
+Show only conversations where analysis_status is 
+analysed and draft_count is greater than zero.
+Order by relevance_score descending.
+Show maximum 10 conversations per page with pagination.
+
+Each card must show:
+- Platform badge (coloured by platform)
+- Post author name
+- First 200 characters of original_post with ellipsis
+- Central topic from the analysis (one line, secondary text)
+- Relevance score as a horizontal progress bar 
+  coloured from warning to success based on score
+- Number of drafts ready
+- Time since submission (e.g. 2 hours ago)
+- Two buttons: Review and Dismiss
+  Review navigates to /conversations/{id}
+  Dismiss calls reject on all pending drafts for that 
+  conversation with reason dismissed from feed and 
+  removes the card from the feed immediately
+
+EMPTY STATE:
+If no conversations are awaiting review show a calm 
+empty state with an icon and the message:
+You are all caught up. No conversations need your 
+attention right now.
+
+LOADING STATE:
+Show skeleton cards while data is loading. 
+Use animated pulse placeholders that match the 
+card layout exactly.
+
+═══════════════════════════════════════
+SECTION 2 — CONVERSATION DETAIL 
+(/conversations/[id])
+═══════════════════════════════════════
+
+This is the core working view. The author spends most 
+of their time here reading, thinking, and deciding.
+
+LAYOUT:
+Two column layout on desktop. Single column on mobile.
+Left column (40% width): conversation thread and analysis
+Right column (60% width): response drafts
+
+LEFT COLUMN — CONVERSATION THREAD:
+Show a back button to return to the feed.
+Show the platform badge and post author at the top.
+Show the full original_post text in a readable card.
+If full_thread exists show it below the original post 
+in a slightly different background shade labelled 
+Full Thread. Make this collapsible — collapsed by 
+default if thread is longer than 500 characters.
+Show post_url as a subtle external link if it exists.
+
+LEFT COLUMN — AI ANALYSIS PANEL:
+Show below the conversation thread.
+Label it clearly as AI Analysis.
+Display each field from ConversationAnalysis:
+
+Central Topic: shown as a highlighted chip at the top
+
+Participation Recommendation: shown prominently as either
+COMMENT — shown in success colour with a checkmark icon
+DO NOT COMMENT — shown in danger colour with an x icon
+Include the recommendation_reason below it in secondary text
+
+Relevance Score: shown as a large number percentage 
+with a circular progress indicator
+
+Key Tensions: shown as a bullet list
+
+Viewpoints Represented: shown as a bullet list
+
+Emotional Sensitivities: shown as a text block with 
+a subtle warning icon
+
+Value Reasoning: shown as an italic quote block
+
+RIGHT COLUMN — DRAFT GRID:
+Show all 4 response drafts.
+On desktop show them in a 2x2 grid.
+On mobile show them stacked vertically.
+
+Each draft card must show:
+- Style label at the top with an icon:
+  Insightful Contribution: lightbulb icon
+  Facilitative Question: help circle icon
+  Synthesis of Viewpoints: git merge icon
+  Constructive Challenge: alert triangle icon
+
+- Draft content as readable body text
+
+- Value explanation below the content in italic 
+  secondary text with a small info icon
+
+- Source documents as small badge chips below that
+  Each chip shows the document title truncated to 
+  30 characters
+
+- Include link indicator if include_link is true 
+  show a subtle link chip with the suggested_link
+
+- Action buttons at the bottom of each card:
+  Approve — success coloured button
+  Edit and Approve — accent coloured button
+  Save for Later — ghost button
+  Reject — danger coloured ghost button
+
+- If the draft status is not pending show a status 
+  badge instead of the action buttons and grey out 
+  the card slightly
+
+EDIT AND APPROVE FLOW:
+When the author clicks Edit and Approve open an 
+inline edit mode within the draft card — do not 
+use a modal. Replace the content text with a 
+textarea pre-filled with the draft content. Show 
+character count. Show two buttons: Confirm and 
+Cancel. On confirm call editAndApproveDraft with 
+the edited content.
+
+REJECT FLOW:
+When the author clicks Reject show a small inline 
+dropdown or input below the button asking for an 
+optional rejection reason. Show common reasons as 
+quick select chips:
+Too generic
+Off topic
+Wrong tone
+Too promotional
+Nothing to add
+Or let them type a custom reason.
+Then show a Confirm Reject button.
+
+OPTIMISTIC UPDATES:
+When any action is taken on a draft update the UI 
+immediately without waiting for the API response. 
+If the API call fails revert the change and show 
+a toast error.
+
+═══════════════════════════════════════
+SECTION 3 — ALL CONVERSATIONS 
+(/conversations)
+═══════════════════════════════════════
+
+A full list of all conversations ever submitted.
+
+FILTERS BAR at the top:
+- Filter by platform (dropdown with all platform options)
+- Filter by status (all / pending / analysed / skipped / error)
+- Search by post author or topic (text input)
+- Date range picker (from / to)
+
+CONVERSATIONS TABLE:
+Show as a table on desktop and as cards on mobile.
+Columns: Platform, Author, Topic, Status, Relevance, 
+Drafts, Submitted, Actions
+
+Actions column has one button: View
+Clicking View navigates to /conversations/{id}
+
+PAGINATION: 20 per page with next and previous buttons 
+and a page indicator.
+
+═══════════════════════════════════════
+SECTION 4 — SUBMIT CONVERSATION 
+(/submit)
+═══════════════════════════════════════
+
+A simple form for manually submitting a conversation 
+into the system. This is used when the author or their 
+assistant spots a post manually and wants the system 
+to analyse it.
+
+FORM FIELDS:
+Platform (required): dropdown with all platform options
+Post URL: text input (optional)
+Post Author: text input (optional)
+Original Post (required): large textarea 
+  labelled Paste the original post here
+Full Thread: large textarea 
+  labelled Paste the full thread including comments 
+  (optional but recommended)
+
+SUBMIT BUTTON:
+Label: Analyse This Conversation
+On submit call POST /conversations/submit
+Show a loading state on the button while the request 
+is in flight.
+On success show a success toast and navigate to 
+/conversations/{id} where id is the returned 
+conversation id.
+On error show an error toast with the error message.
+
+NOTE below the form in secondary text:
+The system will analyse this conversation and generate 
+response drafts in the background. This usually takes 
+15 to 30 seconds. You will see it appear in your feed 
+once it is ready.
+
+═══════════════════════════════════════
+SECTION 5 — KNOWLEDGE BASE 
+(/knowledge)
+═══════════════════════════════════════
+
+Where the author manages their writing archive.
+
+TOP STATS BAR:
+Show three stats in a row:
+- Total Documents with a file icon
+- Total Chunks with a layers icon
+- Estimated Total Tokens with a cpu icon
+
+UPLOAD SECTION:
+A drag and drop upload zone at the top of the page.
+Accepted file types: PDF, DOCX, HTML, TXT, MD
+Show the accepted types as small labels inside the zone.
+When a file is dragged over highlight the zone border 
+in accent colour.
+Below the drop zone show optional metadata fields 
+that can be filled before uploading:
+  Title (text input)
+  Source Type (select: blog / article / book / 
+    newsletter / talk / workshop / other)
+  Author (text input)
+  Published Date (date input)
+Show an Upload Document button.
+Show upload progress with a progress bar.
+On success add the new document to the list immediately 
+with status processing and poll GET /knowledge/documents 
+every 3 seconds until its status changes to ready or error.
+
+DOCUMENTS LIST:
+Show all documents as cards in a responsive grid 
+(3 columns on desktop, 2 on tablet, 1 on mobile).
+
+Each document card shows:
+- File type icon (different icon for PDF, DOCX, etc)
+- Title or filename if no title
+- Source type badge
+- Status badge
+- Word count and chunk count in secondary text
+- Upload date in secondary text
+- Three action buttons at the bottom:
+  View Chunks (opens a modal showing all chunks)
+  Reindex (with a confirm dialog before calling reindex)
+  Delete (with a confirm dialog before calling delete)
+
+PROCESSING STATE:
+Documents with status processing must show an animated 
+loading indicator and the text Processing your document 
+instead of the normal stats.
+
+ERROR STATE:
+Documents with status error must show the error message 
+in danger colour with a Reindex button to retry.
+
+═══════════════════════════════════════
+SECTION 6 — FEEDBACK HISTORY 
+(/history)
+═══════════════════════════════════════
+
+Where the author sees how the system is performing 
+and what decisions they have made over time.
+
+TOP STATS CARDS:
+Show four stat cards in a row:
+- Total Drafts Generated
+- Approval Rate as a percentage with a trend indicator
+- Edit Rate as a percentage
+- Rejection Rate as a percentage
+
+STYLE PERFORMANCE SECTION:
+Show a simple bar chart built with plain divs and 
+Tailwind — no chart library.
+Each bar represents one draft style and its approval rate.
+Label each bar with the style name and percentage.
+Colour the bars using the accent colour with opacity 
+varying by rank.
+
+REJECTION REASONS SECTION:
+Show the top 5 rejection reasons as a ranked list.
+Each item shows the reason text, a count badge, 
+and a subtle horizontal bar showing relative frequency.
+
+FEEDBACK TABLE:
+A full table of all past feedback log entries.
+Columns: Date, Platform, Style, Action, 
+Original Length, Final Length
+Filter by action type.
+20 rows per page with pagination.
+
+═══════════════════════════════════════
+SIDEBAR NAVIGATION
+═══════════════════════════════════════
+
+Build a fixed left sidebar that is always visible 
+on desktop and collapses to a hamburger menu on mobile.
+
+SIDEBAR WIDTH: 240px on desktop
+
+TOP OF SIDEBAR:
+Show the product name AI Dialogue Enhancer in accent 
+colour with a small sparkles icon.
+Below it show a subtle tagline: Quality over quantity.
+
+NAVIGATION LINKS in order:
+Today's Feed        — /feed         — home icon
+  Show a badge with the count of conversations 
+  awaiting review. Update this count every 60 seconds.
+Conversations       — /conversations — message square icon
+Submit              — /submit        — plus circle icon
+Knowledge Base      — /knowledge     — database icon
+Feedback History    — /history       — bar chart icon
+Community Manager   — /community     — users icon
+Settings            — /settings      — settings icon
+
+ACTIVE STATE:
+The active navigation item must have:
+- accent coloured left border (4px)
+- surface-raised background
+- accent-light text colour
+
+BOTTOM OF SIDEBAR:
+Show a small status indicator showing whether the 
+backend API is reachable. Poll GET /knowledge/documents 
+every 60 seconds. Show either:
+API Connected — success colour dot and text
+API Unreachable — danger colour dot and text
+
+═══════════════════════════════════════
+SHARED COMPONENTS
+═══════════════════════════════════════
+
+TOAST SYSTEM:
+Build a custom toast component that appears in the 
+bottom right corner.
+Support four types: success, error, warning, info
+Each toast has an icon, message, and auto-dismisses 
+after 4 seconds.
+Multiple toasts can stack vertically.
+The user can manually dismiss a toast by clicking it.
+Build a useToast hook that any component can import 
+to trigger a toast.
+
+CONFIRM DIALOG:
+A modal that appears before destructive actions like 
+delete or reindex.
+Shows a title, description, and two buttons: 
+Cancel and Confirm.
+The Confirm button is danger coloured for destructive 
+actions.
+
+LOADING SPINNER:
+A simple circular spinner in accent colour.
+Three sizes: sm (16px), md (24px), lg (40px).
+
+EMPTY STATE:
+Accepts an icon, title, description, and optional 
+action button.
+Centred in its container with generous vertical padding.
+
+ERROR STATE:
+Accepts a title, description, and optional retry 
+callback.
+Shows a danger coloured icon.
+The retry button calls the callback.
+
+BUTTON COMPONENT:
+Variants: primary, secondary, ghost, danger
+Sizes: sm, md, lg
+Loading state: shows spinner and disables the button
+Icon support: optional left or right icon
+
+═══════════════════════════════════════
+RESPONSIVE BEHAVIOUR
+═══════════════════════════════════════
+
+DESKTOP (1024px and above):
+- Fixed sidebar always visible
+- Full two column layout on conversation detail page
+- 3 column grid on knowledge base page
+- Table layout on conversations list
+
+TABLET (768px to 1023px):
+- Sidebar collapses to icon-only mode (60px wide)
+  showing only icons without labels
+- Two column layout on knowledge base (2 columns)
+- Table layout on conversations list
+
+MOBILE (below 768px):
+- Sidebar hidden behind hamburger menu in topbar
+- Menu slides in from left as overlay
+- Single column on all pages
+- Cards instead of tables on conversations list
+
+═══════════════════════════════════════
+PERFORMANCE AND POLISH
+═══════════════════════════════════════
+
+POLLING:
+The feed page must poll GET /conversations every 
+60 seconds to check for new conversations.
+The sidebar badge count must update every 60 seconds.
+Uploading documents must poll until status changes.
+All polling must stop when the component unmounts 
+to prevent memory leaks.
+
+OPTIMISTIC UPDATES:
+All draft actions (approve, edit, reject, save) must 
+update the UI immediately before the API responds.
+Revert on failure and show error toast.
+
+PAGE TRANSITIONS:
+Use simple Tailwind opacity and translate transitions 
+when navigating between pages.
+
+SCROLL BEHAVIOUR:
+The left column on the conversation detail page 
+must scroll independently from the right column 
+so the author can scroll through the thread while 
+keeping the drafts visible.
+
+KEYBOARD SHORTCUTS (optional but recommended):
+On the conversation detail page:
+  A — approve the first pending draft
+  E — open edit mode on the first pending draft
+  R — reject the first pending draft
+  Escape — close any open modal or edit mode
+
+═══════════════════════════════════════
+ENVIRONMENT VARIABLES
+═══════════════════════════════════════
+
+Generate a complete .env.local.example file:
+
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+═══════════════════════════════════════
+README REQUIREMENTS
+═══════════════════════════════════════
+
+Generate a complete README.md covering:
+
+1. Prerequisites: Node.js 18+, the backend API running
+2. Installation: npm install
+3. Environment setup: copy .env.local.example to 
+   .env.local and set NEXT_PUBLIC_API_URL
+4. Running in development: npm run dev
+5. Building for production: npm run build
+6. A brief description of each page and what it does
+7. How to connect to the backend
+8. Known limitations of the current build 
+   (community manager and settings use localStorage)

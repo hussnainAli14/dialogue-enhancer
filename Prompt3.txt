@@ -1,0 +1,985 @@
+═══════════════════════════════════════
+WHAT YOU ARE BUILDING — READ THIS FIRST
+═══════════════════════════════════════
+
+This prompt covers Module 2 of the AI Dialogue Enhancer 
+system. You are building the platform connection layer — 
+the part of the system that authenticates with social 
+media platforms via OAuth and provides a unified 
+interface for fetching posts that Module 4 (Post 
+Discovery and Scoring) will plug into.
+
+───────────────────────────────────────
+SYSTEM CONTEXT
+───────────────────────────────────────
+
+The AI Dialogue Enhancer is a fully automated system 
+that helps a coach and author participate more 
+thoughtfully in online conversations. It monitors 
+social media platforms, finds relevant conversations, 
+retrieves ideas from the author's writing archive 
+using RAG, generates response drafts, and presents 
+them for human review and approval.
+
+The following modules are already built and running:
+
+Module 1 — Knowledge Base Ingestion (RAG pipeline)
+Module 6 — Knowledge Retrieval
+Module 7 — Conversation Analysis and Response Generation
+Module 8 — Dashboard Frontend (Next.js)
+Module 9 — Approval and Posting Workflow
+Module 10 — Feedback and Learning System
+
+The backend is Python FastAPI. The frontend is Next.js 
+with Tailwind CSS. The database is Supabase PostgreSQL.
+
+───────────────────────────────────────
+WHAT MODULE 2 DOES
+───────────────────────────────────────
+
+Module 2 has two responsibilities:
+
+RESPONSIBILITY 1 — OAUTH CONNECTION FLOW:
+Provide a way for the author to connect their social 
+media accounts to the system by clicking a Connect 
+button in the dashboard Settings page. The system 
+handles the OAuth handshake with each platform, 
+receives and stores the access tokens securely in 
+Supabase, and shows the connection status in the 
+dashboard.
+
+RESPONSIBILITY 2 — UNIFIED POST FETCHING INTERFACE:
+Provide a single consistent Python interface that 
+Module 4 can call to fetch posts from any connected 
+platform without knowing the details of each 
+platform's API. Module 4 calls one method and gets 
+back posts in a standardised format regardless of 
+which platform they came from.
+
+───────────────────────────────────────
+PLATFORMS IN THIS BUILD
+───────────────────────────────────────
+
+Build connections for these platforms only in this 
+module. These are the fully automated platforms with 
+reliable official APIs:
+
+1. Reddit
+2. Bluesky
+3. Mastodon
+4. Discord
+5. Telegram
+6. Threads
+7. YouTube
+
+Facebook, LinkedIn, Instagram, and X (Twitter) are 
+excluded from this build. They will be added in a 
+future module due to their stricter API restrictions 
+and different access requirements.
+
+───────────────────────────────────────
+HOW THE OAUTH FLOW WORKS
+───────────────────────────────────────
+
+The flow for each platform works like this:
+
+1. Author clicks Connect next to a platform in the 
+   dashboard Settings page.
+
+2. The frontend calls the backend which generates 
+   the correct OAuth authorisation URL for that 
+   platform and returns it.
+
+3. The frontend redirects the author to that URL 
+   on the platform's website.
+
+4. The author logs in and grants permission on the 
+   platform's own page.
+
+5. The platform redirects back to the app's callback 
+   URL with an authorisation code.
+
+6. The backend exchanges the code for access tokens 
+   and refresh tokens.
+
+7. The tokens are stored securely in Supabase.
+
+8. The dashboard shows the platform as Connected 
+   with the connected account name.
+
+Note: Not all platforms use standard OAuth 2.0. 
+Bluesky uses ATP (AT Protocol) with username and 
+app password. Telegram uses a bot token. Discord 
+uses OAuth 2.0 for user auth plus a bot token for 
+reading servers. Handle each platform's actual 
+authentication method correctly as described in 
+the platform-specific sections below.
+
+═══════════════════════════════════════
+TECH STACK — LOCKED IN, DO NOT CHANGE
+═══════════════════════════════════════
+
+Backend:
+- Python with FastAPI (existing project)
+- Database: Supabase PostgreSQL (existing project)
+- Supabase client: supabase-py
+- HTTP client for OAuth exchanges: httpx (async)
+- Reddit: PRAW (Python Reddit API Wrapper)
+- Bluesky: atproto library
+- Mastodon: Mastodon.py
+- Discord: discord.py for bot, httpx for OAuth
+- Telegram: python-telegram-bot
+- Threads: httpx (Meta Graph API)
+- YouTube: google-api-python-client
+- Environment variables: python-dotenv
+
+Frontend (updates to existing Next.js dashboard):
+- Add a Platform Connections section to the 
+  existing Settings page (/settings)
+- Add a new sidebar navigation item: Connections
+  with a plug icon, linking to /settings#connections
+- Use the existing component library and design system
+
+═══════════════════════════════════════
+DATABASE SCHEMA ADDITIONS
+═══════════════════════════════════════
+
+Add these new tables to the existing Supabase schema.
+Generate a new migration file:
+supabase/migrations/002_platform_connections.sql
+
+TABLE: platform_connections
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null unique
+  (reddit / bluesky / mastodon / discord / telegram 
+  / threads / youtube)
+- status: TEXT default 'disconnected'
+  (disconnected / connected / error / expired)
+- account_name: TEXT (display name of connected account)
+- account_id: TEXT (platform-specific user or bot ID)
+- access_token: TEXT (encrypted)
+- refresh_token: TEXT (encrypted, null if not applicable)
+- token_expires_at: TIMESTAMPTZ (null if token never expires)
+- scope: TEXT (OAuth scopes granted)
+- metadata: JSONB (platform-specific extra data)
+- last_used_at: TIMESTAMPTZ
+- last_error: TEXT
+- connected_at: TIMESTAMPTZ
+- updated_at: TIMESTAMPTZ default now()
+- created_at: TIMESTAMPTZ default now()
+
+TABLE: platform_connection_logs
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null
+- event: TEXT not null
+  (connect_initiated / connect_success / connect_failed 
+  / token_refreshed / token_expired / disconnected 
+  / fetch_success / fetch_failed)
+- message: TEXT
+- metadata: JSONB
+- created_at: TIMESTAMPTZ default now()
+
+IMPORTANT SECURITY NOTE:
+Access tokens and refresh tokens must never be 
+stored as plain text. Before storing, encrypt them 
+using Fernet symmetric encryption from the 
+cryptography library. The encryption key is stored 
+in the environment variable TOKEN_ENCRYPTION_KEY. 
+Decrypt when reading tokens for API calls.
+
+═══════════════════════════════════════
+ENVIRONMENT VARIABLES — ADD THESE
+═══════════════════════════════════════
+
+Add these to the existing .env.example file:
+
+TOKEN_ENCRYPTION_KEY=          (generate with Fernet.generate_key())
+APP_BASE_URL=                  (e.g. http://localhost:8000)
+FRONTEND_URL=                  (e.g. http://localhost:3000)
+
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_REDIRECT_URI=           (APP_BASE_URL/auth/reddit/callback)
+REDDIT_USER_AGENT=             (AI Dialogue Enhancer/1.0)
+
+BLUESKY_HANDLE=                (e.g. yourname.bsky.social)
+BLUESKY_APP_PASSWORD=          (generated in Bluesky settings)
+
+MASTODON_CLIENT_ID=
+MASTODON_CLIENT_SECRET=
+MASTODON_REDIRECT_URI=         (APP_BASE_URL/auth/mastodon/callback)
+MASTODON_INSTANCE_URL=         (e.g. https://mastodon.social)
+
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_BOT_TOKEN=
+DISCORD_REDIRECT_URI=          (APP_BASE_URL/auth/discord/callback)
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_USERNAME=
+
+THREADS_APP_ID=
+THREADS_APP_SECRET=
+THREADS_REDIRECT_URI=          (APP_BASE_URL/auth/threads/callback)
+
+YOUTUBE_CLIENT_ID=
+YOUTUBE_CLIENT_SECRET=
+YOUTUBE_REDIRECT_URI=          (APP_BASE_URL/auth/youtube/callback)
+
+═══════════════════════════════════════
+PROJECT STRUCTURE — NEW FILES TO ADD
+═══════════════════════════════════════
+
+Add these files to the existing project:
+
+app/
+  routers/
+    connections.py       — OAuth endpoints for all platforms
+  
+  services/
+    connections/
+      __init__.py
+      base.py            — base platform connector class
+      reddit.py          — Reddit connector
+      bluesky.py         — Bluesky connector
+      mastodon.py        — Mastodon connector
+      discord.py         — Discord connector
+      telegram.py        — Telegram connector
+      threads.py         — Threads connector
+      youtube.py         — YouTube connector
+      factory.py         — returns correct connector by platform name
+    
+    token_store.py       — encrypted token storage and retrieval
+    token_encryption.py  — Fernet encryption and decryption helpers
+  
+  schemas/
+    connections.py       — Pydantic models for connection data
+
+supabase/
+  migrations/
+    002_platform_connections.sql
+
+═══════════════════════════════════════
+BASE PLATFORM CONNECTOR
+═══════════════════════════════════════
+
+Build app/services/connections/base.py as an abstract 
+base class that every platform connector must implement.
+
+The base class must define these abstract methods:
+
+get_auth_url(state: str) -> str
+Returns the OAuth authorisation URL to redirect 
+the user to. The state parameter is a random string 
+used to prevent CSRF attacks.
+
+exchange_code(code: str, state: str) -> ConnectionResult
+Exchanges the authorisation code for access tokens. 
+Returns a ConnectionResult containing account_name, 
+account_id, access_token, refresh_token, 
+token_expires_at, scope, and metadata.
+
+refresh_token(connection: PlatformConnection) 
+-> ConnectionResult
+Refreshes an expired access token using the 
+refresh token. Returns updated ConnectionResult.
+
+validate_connection(connection: PlatformConnection) 
+-> bool
+Tests whether the stored tokens are still valid 
+by making a lightweight API call. Returns True 
+if connected, False if not.
+
+fetch_posts(
+  connection: PlatformConnection,
+  keywords: list[str],
+  communities: list[str],
+  since: datetime,
+  limit: int
+) -> list[UniversalPost]
+The core method that Module 4 will call.
+Fetches posts matching the given keywords from 
+the given communities since the given datetime.
+Returns a list of UniversalPost objects.
+
+Define the UniversalPost dataclass in base.py:
+
+UniversalPost:
+  platform: str
+  post_id: str
+  post_url: str
+  author_name: str
+  author_id: str
+  title: str or None
+  content: str
+  thread_content: str or None
+  community_name: str or None
+  community_id: str or None
+  posted_at: datetime
+  comment_count: int
+  engagement_score: float
+  raw_data: dict (full original API response)
+
+The engagement_score is a normalised float between 
+0 and 1 calculated differently per platform based 
+on whatever signals that platform provides such as 
+upvotes, comments, replies, or reactions.
+
+═══════════════════════════════════════
+PLATFORM CONNECTORS
+═══════════════════════════════════════
+
+Build each connector in its own file. Each must 
+extend the base class and implement all methods.
+
+───────────────────────────────────────
+REDDIT CONNECTOR
+───────────────────────────────────────
+
+Authentication: OAuth 2.0 with PRAW
+Scopes needed: read, identity
+
+get_auth_url:
+Use PRAW's OAuth helper to generate the 
+authorisation URL with the read and identity scopes.
+Include the state parameter.
+
+exchange_code:
+Exchange the code for tokens using PRAW.
+Fetch the authenticated user's username as account_name.
+Store access_token and refresh_token.
+Reddit tokens do not expire in the traditional sense 
+when using refresh tokens — set token_expires_at to 
+null and rely on PRAW's automatic token refresh.
+
+validate_connection:
+Call Reddit's /api/v1/me endpoint using the stored 
+tokens to verify they are valid.
+
+fetch_posts:
+For each community in the communities list 
+(treated as subreddit names):
+  Use PRAW to fetch posts from that subreddit.
+  Filter by the given keywords by checking if any 
+  keyword appears in the title or body text.
+  Fetch posts submitted since the since datetime.
+  Respect the limit parameter.
+  For each post fetch the top level comments and 
+  concatenate them as thread_content.
+Calculate engagement_score as:
+  (upvote_ratio * 0.4) + 
+  (min(num_comments / 100, 1) * 0.6)
+Return as UniversalPost list.
+
+Rate limits: Reddit allows 60 requests per minute. 
+Build in a rate limit handler that tracks request 
+count and sleeps if approaching the limit.
+
+───────────────────────────────────────
+BLUESKY CONNECTOR
+───────────────────────────────────────
+
+Authentication: AT Protocol with app password
+Bluesky does not use standard OAuth. Instead the 
+user provides their Bluesky handle and an app 
+password generated in their Bluesky account settings.
+
+get_auth_url:
+Bluesky has no OAuth redirect flow. Return None.
+The connection is made directly via handle and 
+app password stored in environment variables.
+
+exchange_code:
+Not applicable for Bluesky. Instead build a 
+connect() method that calls atproto's 
+Client().login(handle, app_password) and stores 
+the resulting session token as the access_token.
+
+validate_connection:
+Call atproto's getProfile method using the stored 
+session to verify it is still valid.
+
+fetch_posts:
+Use atproto's searchPosts method to search for 
+posts containing the given keywords.
+Filter results to posts newer than the since datetime.
+For each post fetch the thread using getPostThread 
+to get replies as thread_content.
+Calculate engagement_score as:
+  (min(reply_count / 50, 1) * 0.5) + 
+  (min(like_count / 100, 1) * 0.3) + 
+  (min(repost_count / 50, 1) * 0.2)
+Return as UniversalPost list.
+
+───────────────────────────────────────
+MASTODON CONNECTOR
+───────────────────────────────────────
+
+Authentication: OAuth 2.0 via Mastodon.py
+The instance URL is configured via environment 
+variable since Mastodon is federated.
+
+get_auth_url:
+Use Mastodon.py to create an app on the configured 
+instance if not already created.
+Generate the OAuth authorisation URL with 
+read scope.
+
+exchange_code:
+Exchange the code for an access token using 
+Mastodon.py's log_in method.
+Fetch the authenticated account's username and 
+display name.
+
+validate_connection:
+Call Mastodon.py's account_verify_credentials 
+to verify the token is valid.
+
+fetch_posts:
+For each keyword in the keywords list:
+  Use Mastodon.py's timeline_hashtag method 
+  to fetch posts with that hashtag.
+  Use search to find posts containing the keyword 
+  if it is not a hashtag format.
+Filter by since datetime.
+For each post fetch the context (ancestors and 
+descendants) as thread_content.
+Calculate engagement_score as:
+  (min(replies_count / 30, 1) * 0.5) + 
+  (min(favourites_count / 50, 1) * 0.3) + 
+  (min(reblogs_count / 20, 1) * 0.2)
+Return as UniversalPost list.
+
+───────────────────────────────────────
+DISCORD CONNECTOR
+───────────────────────────────────────
+
+Authentication: Bot token for reading messages.
+Discord OAuth is used to identify the user but 
+message reading requires a bot token that is 
+added to relevant servers manually.
+
+get_auth_url:
+Generate a Discord OAuth URL so the user can 
+authorise the app to identify them.
+Also generate a bot invite URL that the user 
+can use to add the bot to their servers.
+Return both URLs in the metadata.
+
+exchange_code:
+Exchange the OAuth code to get the user's 
+Discord identity and store it.
+The bot token from environment variables is 
+used separately for all API operations.
+
+validate_connection:
+Use the bot token to call Discord's /api/users/@me 
+endpoint to verify the bot token is valid.
+
+fetch_posts:
+Discord messages are not public posts in the 
+traditional sense. For Discord, communities 
+are treated as channel IDs or server IDs.
+For each community (channel ID):
+  Use discord.py or direct httpx calls to the 
+  Discord API to fetch recent messages from 
+  that channel since the since datetime.
+  Filter messages containing any of the keywords.
+  Fetch the message thread if it exists.
+  Treat the message content as the post content.
+Calculate engagement_score as:
+  min(reaction_count / 20, 1) * 0.5 +
+  min(reply_count / 10, 1) * 0.5
+Return as UniversalPost list.
+
+Note: The bot must be manually added to Discord 
+servers by the user. Include clear instructions 
+in the dashboard for how to do this.
+
+───────────────────────────────────────
+TELEGRAM CONNECTOR
+───────────────────────────────────────
+
+Authentication: Bot token
+Telegram uses a bot token for all operations. 
+There is no OAuth flow for reading channel posts.
+
+get_auth_url:
+Return None — no OAuth flow for Telegram.
+Connection is made via bot token from environment.
+
+exchange_code:
+Not applicable. Build a connect() method that 
+validates the bot token by calling the Telegram 
+Bot API getMe endpoint and stores the bot username 
+and id as account details.
+
+validate_connection:
+Call getMe to verify the bot token is still valid.
+
+fetch_posts:
+Telegram bots can read messages from channels 
+and groups they are members of.
+For each community (channel username or chat ID):
+  Use python-telegram-bot to fetch recent messages 
+  using getUpdates or by forwarding messages to 
+  the bot.
+  Filter messages containing any of the keywords.
+  Since datetime filtering must be done manually 
+  by checking message date fields.
+Calculate engagement_score as:
+  min(forward_count / 50, 1) * 0.5 +
+  min(view_count / 500, 1) * 0.5
+  where available — not all messages have these fields.
+Return as UniversalPost list.
+
+Note: The bot must be added to Telegram channels 
+or groups by the channel admin. Include clear 
+instructions in the dashboard.
+
+───────────────────────────────────────
+THREADS CONNECTOR
+───────────────────────────────────────
+
+Authentication: OAuth 2.0 via Meta Graph API
+Threads uses Meta's OAuth system. A Meta developer 
+app is required.
+
+get_auth_url:
+Generate the Meta OAuth URL with threads_basic 
+and threads_read_replies scopes.
+
+exchange_code:
+Exchange the code for a short-lived token then 
+exchange that for a long-lived token (60 days).
+Fetch the user's Threads profile name and id.
+Store the long-lived token and set token_expires_at 
+to 60 days from now.
+
+refresh_token:
+Threads long-lived tokens can be refreshed before 
+they expire. Call the token refresh endpoint when 
+the token has less than 7 days remaining.
+
+validate_connection:
+Call the Threads Graph API to fetch the user's 
+own profile to verify the token is valid.
+
+fetch_posts:
+Use the Threads API search endpoint to find 
+posts containing the given keywords.
+Filter by since datetime.
+For each post fetch replies as thread_content.
+Calculate engagement_score as:
+  min(replies_count / 30, 1) * 0.5 +
+  min(likes_count / 100, 1) * 0.5
+Return as UniversalPost list.
+
+───────────────────────────────────────
+YOUTUBE CONNECTOR
+───────────────────────────────────────
+
+Authentication: OAuth 2.0 via Google
+YouTube uses Google's OAuth 2.0 system.
+
+get_auth_url:
+Use google-auth-oauthlib to generate the 
+Google OAuth URL.
+Scopes needed: 
+  https://www.googleapis.com/auth/youtube.readonly
+
+exchange_code:
+Exchange the code for credentials using 
+google-auth-oauthlib.
+Fetch the authenticated user's YouTube channel 
+name and id using the YouTube Data API.
+Store access_token and refresh_token.
+Google tokens expire in 1 hour — store 
+token_expires_at accordingly.
+
+refresh_token:
+Use google-auth to refresh the token 
+automatically when expired.
+
+validate_connection:
+Call the YouTube Data API channels.list endpoint 
+to verify the token is valid.
+
+fetch_posts:
+YouTube posts in this context means video comments 
+sections on relevant videos, and community posts 
+from relevant channels.
+For each keyword in keywords:
+  Use the YouTube Data API search.list endpoint 
+  to find videos matching the keyword published 
+  since the since datetime.
+  For each video fetch the top comments using 
+  commentThreads.list as thread_content.
+  Treat the video title and description as the 
+  post content.
+Calculate engagement_score as:
+  (min(comment_count / 100, 1) * 0.4) +
+  (min(like_count / 1000, 1) * 0.3) +
+  (min(view_count / 10000, 1) * 0.3)
+Return as UniversalPost list.
+
+YouTube Data API has a daily quota of 10,000 units. 
+Track usage carefully and stop fetching if quota 
+is running low. Log quota usage to 
+platform_connection_logs.
+
+═══════════════════════════════════════
+TOKEN STORE SERVICE
+═══════════════════════════════════════
+
+Build app/services/token_store.py as the single 
+place where all token storage and retrieval happens.
+
+All methods must encrypt tokens before storing 
+and decrypt when returning them.
+
+Methods:
+
+save_connection(platform, connection_result) 
+-> PlatformConnection
+Upserts the platform_connections record for 
+the given platform. Encrypts access_token and 
+refresh_token before storing. Sets status to 
+connected and connected_at to now.
+
+get_connection(platform) -> PlatformConnection | None
+Fetches the connection record for the platform. 
+Decrypts the tokens before returning. Returns 
+None if not connected.
+
+get_all_connections() -> list[PlatformConnection]
+Fetches all connection records with tokens 
+decrypted. Used by the connections status endpoint.
+
+update_tokens(platform, new_tokens) -> None
+Updates just the token fields after a refresh. 
+Re-encrypts before storing.
+
+mark_error(platform, error_message) -> None
+Sets status to error and stores the error message.
+
+mark_disconnected(platform) -> None
+Sets status to disconnected and clears all 
+token fields.
+
+log_event(platform, event, message, metadata) -> None
+Inserts a record into platform_connection_logs.
+
+═══════════════════════════════════════
+OAUTH ROUTER
+═══════════════════════════════════════
+
+Build app/routers/connections.py with these endpoints:
+
+GET /connections/status
+Returns the connection status of all 7 platforms.
+For each platform return:
+  platform, status, account_name, connected_at, 
+  last_used_at, last_error
+Does not return tokens.
+
+GET /connections/{platform}/auth-url
+Generates and returns the OAuth authorisation URL 
+for the given platform.
+For platforms without OAuth (Bluesky, Telegram) 
+return a special response indicating the connection 
+method with instructions.
+Also generates and stores a random state string 
+in a short-lived in-memory store or Supabase 
+for CSRF protection.
+
+GET /connections/{platform}/callback
+The OAuth callback endpoint that platforms redirect 
+to after authorisation.
+Validates the state parameter against the stored value.
+Calls the platform connector's exchange_code method.
+Stores the resulting tokens via TokenStore.
+Logs the connect_success event.
+Redirects the user to the frontend settings page 
+with a success query parameter.
+On any error redirects with an error query parameter.
+
+POST /connections/bluesky/connect
+Special endpoint for Bluesky since it does not 
+use OAuth redirects.
+Accepts handle and app_password in the request body.
+Calls the Bluesky connector's connect method.
+Stores the session token.
+Returns connection result.
+
+POST /connections/telegram/connect
+Special endpoint for Telegram.
+Validates the bot token from environment variables 
+by calling getMe.
+Stores the connection result.
+Returns bot username and connection status.
+
+DELETE /connections/{platform}
+Disconnects the platform by clearing its tokens 
+and setting status to disconnected.
+Logs the disconnected event.
+
+POST /connections/{platform}/validate
+Tests whether the current connection is still 
+valid by calling the connector's validate_connection 
+method. Returns valid: true or false with the 
+account name if valid.
+
+POST /connections/{platform}/refresh
+Manually triggers a token refresh for platforms 
+that support it.
+
+GET /connections/logs
+Returns the last 50 events from 
+platform_connection_logs ordered by created_at 
+descending. Supports filtering by platform.
+
+═══════════════════════════════════════
+UNIFIED FETCH INTERFACE FOR MODULE 4
+═══════════════════════════════════════
+
+Build app/services/connections/factory.py as the 
+entry point that Module 4 will use.
+
+Build a PlatformFetchService class with this method:
+
+async fetch_from_all_platforms(
+  keywords: list[str],
+  communities: dict[str, list[str]],
+  since: datetime,
+  limit_per_platform: int = 20
+) -> list[UniversalPost]
+
+The communities parameter is a dict mapping platform 
+name to a list of community identifiers:
+{
+  "reddit": ["r/leadership", "r/coaching"],
+  "bluesky": ["leadership", "personalgrowth"],
+  "discord": ["123456789", "987654321"],
+  ...
+}
+
+This method must:
+1. Fetch all connected platforms from TokenStore
+2. For each connected platform instantiate the 
+   correct connector via the factory
+3. Call fetch_posts on each connector in parallel 
+   using asyncio.gather
+4. Catch and log errors from individual platforms 
+   without failing the entire fetch
+5. Combine all results into a single list
+6. Sort by posted_at descending
+7. Return the combined list
+
+Also build a fetch_from_platform method for 
+fetching from a single platform:
+
+async fetch_from_platform(
+  platform: str,
+  keywords: list[str],
+  communities: list[str],
+  since: datetime,
+  limit: int = 20
+) -> list[UniversalPost]
+
+This is what Module 4 will call per platform 
+when it needs to fetch on a schedule.
+
+═══════════════════════════════════════
+FRONTEND UPDATES — SETTINGS PAGE
+═══════════════════════════════════════
+
+Add a Platform Connections section to the existing 
+/settings page in the Next.js dashboard.
+
+This section must appear at the top of the settings 
+page above all other settings sections.
+
+Add a Connections navigation item to the sidebar 
+with a plug icon linking to /settings#connections 
+so users can jump directly to the connections section.
+
+SECTION HEADING: Platform Connections
+SECTION DESCRIPTION: Connect your social media 
+accounts so the system can monitor conversations 
+and post approved responses automatically.
+
+CONNECTION CARDS:
+Show one card per platform in a responsive grid 
+(2 columns on desktop, 1 on mobile).
+
+Each card shows:
+- Platform icon and name
+- Connection status badge:
+  Connected — success colour
+  Disconnected — muted colour
+  Error — danger colour
+  Expired — warning colour
+- Connected account name if connected 
+  (e.g. Connected as u/username)
+- Connected since date if connected
+- Last error message if status is error
+
+BUTTONS per card:
+If disconnected: Connect button (accent colour)
+If connected: Disconnect button (ghost danger) 
+  and Test Connection button (ghost)
+If error: Reconnect button (warning) and 
+  View Error button that shows the error in a modal
+
+CONNECT FLOW:
+When the author clicks Connect:
+1. Call GET /connections/{platform}/auth-url
+2. For standard OAuth platforms: 
+   redirect to the returned auth URL
+3. For Bluesky: open a modal with two inputs:
+   Bluesky Handle and App Password with 
+   instructions on how to generate an app password
+   Submit calls POST /connections/bluesky/connect
+4. For Telegram: open a modal explaining that 
+   the bot is connected via the bot token in the 
+   server environment and showing the bot username 
+   and a button to validate the connection
+
+CALLBACK HANDLING:
+When the OAuth callback redirects back to the 
+settings page with a success or error query param:
+Show a success toast: Platform connected successfully
+Or show an error toast with the error message
+Refresh the connections status automatically
+
+DISCONNECT FLOW:
+Show a confirm dialog: 
+Are you sure you want to disconnect {platform}? 
+The system will no longer be able to monitor 
+this platform until you reconnect.
+On confirm call DELETE /connections/{platform}
+Update the card status immediately
+
+TEST CONNECTION:
+Call POST /connections/{platform}/validate
+Show a success toast if valid
+Show an error toast with instructions if invalid
+
+SPECIAL INSTRUCTIONS SECTION:
+Below the connection cards show a collapsible 
+section labelled Setup Instructions for each 
+platform that requires manual steps:
+
+Discord: 
+Your bot must be added to each Discord server 
+you want to monitor. Click here to generate a 
+bot invite link and add it to your servers.
+
+Telegram:
+Your bot must be added to each Telegram channel 
+or group you want to monitor as an admin. 
+Contact the channel admin to add your bot.
+
+YouTube:
+Your YouTube API quota is 10,000 units per day. 
+The system will stop fetching YouTube data if 
+this limit is reached to avoid charges.
+
+CONNECTION LOGS:
+Below the connection cards show a small collapsible 
+logs section labelled Recent Connection Events.
+Show the last 10 events from GET /connections/logs 
+with platform, event type, message, and timestamp.
+Refresh every 30 seconds when the section is expanded.
+
+═══════════════════════════════════════
+ERROR HANDLING AND RELIABILITY
+═══════════════════════════════════════
+
+Token expiry:
+Check token_expires_at before every fetch_posts call.
+If the token expires within the next 30 minutes 
+attempt to refresh it before making the call.
+If refresh fails mark the connection as expired 
+and log the event.
+
+Rate limits:
+Each connector must track its own rate limit state.
+When a rate limit error is received from a platform 
+log it, wait for the retry-after period, and retry 
+once before failing.
+
+Network errors:
+Wrap all external API calls in try/except.
+On network error log to platform_connection_logs 
+with event fetch_failed and the error message.
+Never let a single platform failure crash the 
+entire fetch operation.
+
+Token security:
+Never log decrypted tokens.
+Never return tokens in any API response.
+Never store tokens in plain text.
+Always use the TokenStore service — never access 
+the database directly for token operations.
+
+═══════════════════════════════════════
+README ADDITIONS
+═══════════════════════════════════════
+
+Add a Platform Setup Guide section to the existing 
+README.md covering how to create developer apps 
+and get API credentials for each platform:
+
+Reddit:
+Go to reddit.com/prefs/apps
+Click Create App
+Select script type
+Set redirect URI to APP_BASE_URL/auth/reddit/callback
+Copy client ID and client secret
+
+Bluesky:
+Go to bsky.app/settings/app-passwords
+Click Add App Password
+Name it AI Dialogue Enhancer
+Copy the generated password
+Set BLUESKY_HANDLE to your full handle
+
+Mastodon:
+Go to your Mastodon instance preferences
+Go to Development
+Click New Application
+Set redirect URI to APP_BASE_URL/auth/mastodon/callback
+Set scopes to read
+Copy client key and client secret
+
+Discord:
+Go to discord.com/developers/applications
+Click New Application
+Go to Bot section and create a bot
+Copy the bot token as DISCORD_BOT_TOKEN
+Go to OAuth2 section
+Copy client ID and client secret
+Set redirect URI to APP_BASE_URL/auth/discord/callback
+
+Telegram:
+Open Telegram and message @BotFather
+Send /newbot and follow the instructions
+Copy the bot token as TELEGRAM_BOT_TOKEN
+Add the bot to the channels or groups you want 
+to monitor
+
+Threads:
+Go to developers.facebook.com
+Create a new app and add the Threads product
+Set redirect URI to APP_BASE_URL/auth/threads/callback
+Copy app ID and app secret
+
+YouTube:
+Go to console.cloud.google.com
+Create a new project
+Enable the YouTube Data API v3
+Go to Credentials and create an OAuth 2.0 client
+Set redirect URI to APP_BASE_URL/auth/youtube/callback
+Copy client ID and client secret

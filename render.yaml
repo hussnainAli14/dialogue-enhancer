@@ -1,0 +1,80 @@
+# Render blueprint for the FastAPI backend.
+# In Render: New → Blueprint → point at this repo. Secrets (sync:false) are
+# entered in the dashboard, not committed.
+services:
+  - type: web
+    name: dialogue-enhancer-api
+    runtime: python
+    plan: starter        # "free" works but sleeps when idle (scheduler pauses)
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+      # LLM — Ollama can't run on Render, so use OpenAI in production.
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+
+      # Tuning (safe defaults)
+      - key: CHUNK_SIZE
+        value: "800"
+      - key: CHUNK_OVERLAP
+        value: "150"
+      - key: RETRIEVAL_TOP_K
+        value: "10"
+      - key: RETRIEVAL_RERANK_TOP_K
+        value: "5"
+      - key: SIMILARITY_THRESHOLD
+        value: "0.65"
+      - key: MAX_DRAFT_WORDS
+        value: "200"
+      - key: MIN_DRAFT_WORDS
+        value: "80"
+      - key: DISCOVERY_SCHEDULE_MINUTES
+        value: "30"
+      - key: MAX_POSTS_PER_RUN
+        value: "8"
+      - key: MAX_CONVERSATIONS_PER_DAY
+        value: "5"
+      - key: MIN_RELEVANCE_SCORE
+        value: "0.65"
+
+      # ── Secrets — set these in the Render dashboard (sync:false) ──
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+
+      # URLs — set after you know the deployed hostnames
+      - key: APP_BASE_URL      # this service's own URL
+        sync: false
+      - key: FRONTEND_URL      # the Vercel URL
+        sync: false
+
+      # Platform credentials (set the ones you use)
+      - key: BLUESKY_HANDLE
+        sync: false
+      - key: BLUESKY_APP_PASSWORD
+        sync: false
+      - key: MASTODON_CLIENT_ID
+        sync: false
+      - key: MASTODON_CLIENT_SECRET
+        sync: false
+      - key: MASTODON_INSTANCE_URL
+        sync: false
+      - key: MASTODON_REDIRECT_URI
+        sync: false

@@ -1,0 +1,928 @@
+═══════════════════════════════════════
+WHAT WE ARE BUILDING — READ THIS FIRST
+═══════════════════════════════════════
+
+This prompt describes the backend system for an AI Dialogue 
+Enhancer. Before writing any code, read this entire section 
+carefully so you understand the end goal, the full system 
+architecture, and exactly which parts you are building now 
+versus later.
+
+───────────────────────────────────────
+THE END GOAL
+───────────────────────────────────────
+
+We are building a fully automated, AI-powered web system that 
+helps a coach and author — someone with approximately fifteen 
+years of published writing across blogs, articles, newsletters, 
+books, talks, and workshops — participate more thoughtfully and 
+effectively in online conversations across multiple social media 
+platforms.
+
+The system is not a content scheduling tool. It is not a 
+marketing tool. It is a reflective thinking partner. Its 
+purpose is to improve the quality of the author's participation 
+in public dialogue, not the volume of posts they make.
+
+The system works like this at a high level:
+
+1. It monitors social media platforms continuously and finds 
+   conversations related to the author's areas of expertise — 
+   coaching, leadership, personal growth, spirituality, and 
+   community.
+
+2. For each relevant conversation it finds, it searches the 
+   author's entire body of writing to retrieve the most 
+   relevant ideas, frameworks, and stories they have already 
+   written about.
+
+3. Using those retrieved ideas as grounding, it generates 
+   three to four thoughtful response drafts in different 
+   styles — each one written in the author's voice and 
+   rooted in their actual thinking.
+
+4. It presents those drafts to the author in a clean web 
+   dashboard where they can review, edit, approve, or reject 
+   each one.
+
+5. When the author approves a response, the system posts it 
+   directly to the social media platform automatically.
+
+6. Every decision the author makes — approvals, edits, 
+   rejections — is stored so the system gradually learns 
+   their preferences and improves over time.
+
+The guiding principle of the entire system is:
+Help the author identify conversations where they can make 
+a genuinely valuable contribution, and help them contribute 
+in a way that is insightful, facilitative, grounded in their 
+work, and faithful to their voice.
+
+Every comment requires the author's approval before being 
+posted. Nothing is ever published autonomously.
+
+───────────────────────────────────────
+THE FULL SYSTEM — ALL MODULES
+───────────────────────────────────────
+
+The complete system has twelve modules in total. Here is what 
+each one does so you understand where the parts you are 
+building fit into the whole:
+
+MODULE 1 — KNOWLEDGE BASE
+Ingests the author's writing archive. Parses documents, 
+splits them into chunks, generates embeddings, and stores 
+everything in a vector database for semantic search.
+STATUS: BUILD THIS NOW — it is in this prompt.
+
+MODULE 2 — PLATFORM API CONNECTIONS
+Connects to all social media platforms via their official 
+APIs — Reddit, Bluesky, Mastodon, Discord, Telegram, 
+Threads, YouTube, Facebook, LinkedIn, Instagram, and X.
+STATUS: CONFIGURATION ONLY — not part of this build. 
+Each platform connection is set up separately using that 
+platform's own documentation and credentials. Do not build 
+this now.
+
+MODULE 3 — COMMUNITY DISCOVERY AND JOINING
+Automatically finds relevant communities, subreddits, 
+hashtags, Discord servers, and Telegram groups based on 
+a seed list of topics and keywords, then joins or follows 
+them automatically where the platform allows.
+STATUS: FUTURE BUILD — not part of this prompt. 
+Do not build this now.
+
+MODULE 4 — POST DISCOVERY AND SCORING
+Background workers that continuously monitor all joined 
+communities across all platforms, pull in new posts, score 
+them for relevance using AI, and surface only the top 
+three to five each day to the dashboard.
+STATUS: FUTURE BUILD — not part of this prompt. 
+Do not build this now.
+
+MODULE 5 — AI CONVERSATION ANALYSIS ENGINE
+Analyses each surfaced conversation in depth — identifying 
+the central topic, key tensions, viewpoints already 
+represented, emotional sensitivities, and whether the 
+author can add something genuinely valuable. Can recommend 
+not commenting on a conversation when appropriate.
+STATUS: BUILD THIS NOW — it is included in Module 7 
+of this prompt as Stage 2 of the pipeline.
+
+MODULE 6 — KNOWLEDGE RETRIEVAL (RAG)
+Given a conversation, extracts a focused search query, 
+searches the vector database semantically, reranks the 
+results, and assembles the most relevant chunks from the 
+author's writing into a structured context block for 
+use in response generation.
+STATUS: BUILD THIS NOW — it is in this prompt.
+
+MODULE 7 — RESPONSE GENERATION
+Uses the retrieved context and conversation analysis to 
+generate three to four response drafts in parallel, each 
+in a different style — insightful contribution, 
+facilitative question, synthesis of viewpoints, and 
+constructive challenge. Every draft is grounded in the 
+author's actual writing.
+STATUS: BUILD THIS NOW — it is in this prompt.
+
+MODULE 8 — DASHBOARD
+A clean web application where the author reviews today's 
+shortlisted conversations and their drafted responses, 
+approves or edits responses, manages their knowledge base, 
+and monitors feedback history.
+STATUS: FUTURE BUILD — not part of this prompt. 
+Do not build this now. The backend you are building must 
+expose clean REST API endpoints that this dashboard will 
+consume later.
+
+MODULE 9 — APPROVAL AND POSTING WORKFLOW
+The author approves, edits, rejects, or saves each draft. 
+Approved drafts are posted automatically to the platform. 
+The workflow is the bridge between human judgment and 
+automated action.
+STATUS: BUILD THIS NOW — it is in this prompt.
+
+MODULE 10 — FEEDBACK AND LEARNING SYSTEM
+Every decision the author makes is logged. The system 
+stores approvals, edits, rejections, and reasons to 
+gradually improve the quality of future retrieval and 
+generation.
+STATUS: BUILD THIS NOW — the feedback logging and 
+storage logic is included in this prompt.
+
+MODULE 11 — SETTINGS AND CONFIGURATION
+Platform API key management, keyword preferences, 
+relevance score thresholds, notification preferences, 
+and knowledge base configuration.
+STATUS: FUTURE BUILD — handled via environment 
+variables for now.
+
+MODULE 12 — FUTURE PRODUCT FEATURES
+SaaS multi-user accounts, advanced discovery from 
+newsletters and RSS, browser extension for LinkedIn, 
+native mobile app, deep analytics, and fine-tuned 
+voice learning.
+STATUS: FUTURE BUILD — do not consider these now. 
+Build the current system in a modular way so these 
+can be added later without rebuilding.
+
+───────────────────────────────────────
+WHAT YOU ARE BUILDING IN THIS PROMPT
+───────────────────────────────────────
+
+You are building the complete Python FastAPI backend for 
+Modules 1, 6, 7, 9, and 10. Specifically:
+
+Module 1 — the full document ingestion pipeline including 
+file upload, parsing, chunking, embedding, and storage in 
+Supabase pgvector, plus a document management API.
+
+Module 6 — the knowledge retrieval service including 
+query extraction, semantic vector search, reranking, and 
+context assembly. This is a reusable internal service, 
+not a public endpoint.
+
+Module 7 — the conversation submission endpoint, the full 
+analysis and generation pipeline running as a background 
+task, and the conversation listing and detail endpoints.
+
+Module 9 — the draft approval, edit, reject, save, and 
+mark-posted endpoints.
+
+Module 10 — the feedback logging service and the feedback 
+summary endpoint.
+
+You are NOT building the dashboard frontend, the platform 
+API connections, the community discovery workers, the post 
+scoring workers, or any future product features. Your job 
+is to build a clean, well-structured, production-ready 
+Python backend with REST API endpoints that a frontend 
+dashboard can connect to later.
+
+───────────────────────────────────────
+HOW THE THREE CORE MODULES CONNECT
+───────────────────────────────────────
+
+Modules 1, 6, and 7 form one continuous RAG pipeline. 
+They are not three separate features — they are three 
+stages of the same flow:
+
+Module 1 builds the knowledge store.
+Without Module 1 there is nothing to retrieve.
+
+Module 6 searches the knowledge store.
+Without Module 6 the generated responses have no grounding.
+
+Module 7 generates responses using what Module 6 retrieved.
+Without Module 7 the retrieved context has no purpose.
+
+The pipeline for every single conversation looks like this:
+
+Conversation submitted via POST /conversations/submit
+        ↓
+Module 6: Extract semantic search query from conversation
+        ↓
+Module 6: Embed query and search Supabase pgvector
+        ↓
+Module 6: Rerank results and assemble context block
+        ↓
+Module 7: Run conversation analysis with Llama 3 or GPT-4o
+        ↓
+Module 7: If DO_NOT_COMMENT — stop pipeline, mark skipped
+        ↓
+Module 7: If COMMENT — generate 4 drafts in parallel
+        ↓
+Store analysis and drafts in PostgreSQL
+        ↓
+Expose via GET /conversations/{id} for dashboard to display
+        ↓
+Author reviews in dashboard and approves, edits, or rejects
+        ↓
+Module 9: Record decision and log to feedback_log
+        ↓
+Module 9: If approved — mark ready for posting
+        ↓
+Module 10: Log feedback for future learning
+
+───────────────────────────────────────
+PLATFORMS THIS SYSTEM SUPPORTS
+───────────────────────────────────────
+
+The system is designed to work across these platforms. 
+The backend must treat platform as a field on every 
+conversation record and must never be hardcoded to 
+a single platform:
+
+Fully automated (official API available):
+Reddit, Bluesky, Mastodon, Discord, Telegram, 
+Threads, YouTube
+
+Partially automated (manual browser extension required 
+due to API restrictions):
+Facebook, LinkedIn
+
+Limited automation (business accounts only):
+Instagram
+
+Optional paid tier:
+X formerly Twitter
+
+For now the backend you are building does not handle 
+the actual fetching of posts from these platforms — 
+that is Module 4 which is a future build. The backend 
+simply accepts conversations submitted via the API 
+regardless of which platform they came from.
+
+───────────────────────────────────────
+VOICE AND PARTICIPATION PRINCIPLES
+───────────────────────────────────────
+
+Every response draft the system generates must reflect 
+these principles. Bake them into your generation prompts:
+
+Speak as a thoughtful participant not an authority.
+Help people think more deeply rather than simply agree.
+Find common ground between differing perspectives.
+Challenge ideas without diminishing people.
+Ask questions that open genuine inquiry.
+Make disagreement feel safer and more productive.
+Only suggest links when they genuinely help the reader — 
+never for self-promotion.
+
+The goal is for readers of the generated responses to 
+feel understood, curious, respected, invited into deeper 
+reflection, and more capable of engaging with complexity.
+
+The system should sometimes recommend not commenting at 
+all. This is a feature not a bug. Quality over quantity 
+is the core principle of the entire product.
+
+═══════════════════════════════════════
+TECH STACK — LOCKED IN, DO NOT CHANGE
+═══════════════════════════════════════
+
+- Backend framework: Python with FastAPI
+- RAG orchestration: LangChain
+- LLM (development): Llama 3 running locally via Ollama
+  Use LangChain's ChatOllama integration
+  Model name: llama3
+  Base URL: read from environment variable OLLAMA_BASE_URL
+- LLM (production): OpenAI GPT-4o via LangChain's ChatOpenAI
+  Controlled by environment variable LLM_PROVIDER
+  If LLM_PROVIDER=ollama use ChatOllama with llama3
+  If LLM_PROVIDER=openai use ChatOpenAI with gpt-4o
+  The rest of the code must be identical regardless of which 
+  provider is active — this swap must be a single environment 
+  variable change with zero code changes required
+- Embeddings: OpenAI text-embedding-3-small via LangChain
+  This is used in BOTH development and production
+  Dimension output: 1536
+  Read API key from environment variable OPENAI_API_KEY
+- Vector database: Supabase pgvector
+  This is the ONLY vector database — do not introduce 
+  Pinecone, Chroma, Weaviate, or any other vector store
+- Relational database: Supabase PostgreSQL
+  Same Supabase project as the vector database
+  Same connection — one database for everything
+- Supabase client: supabase-py
+- File storage: Supabase Storage
+- Document parsers:
+  PDF: PyMuPDF (import as fitz)
+  DOCX: python-docx
+  HTML: BeautifulSoup4
+  TXT and Markdown: plain file read
+- Text splitting: LangChain RecursiveCharacterTextSplitter
+- Data validation: Pydantic v2
+- Environment variables: python-dotenv
+- Async: all FastAPI endpoints and database calls must be 
+  async wherever supabase-py supports it
+
+═══════════════════════════════════════
+PROJECT STRUCTURE
+═══════════════════════════════════════
+
+Build the project with this exact folder structure:
+
+app/
+  main.py              — FastAPI app entry point
+  config.py            — environment variable loading and 
+                         LLM provider selection logic
+  database.py          — Supabase client initialisation
+  
+  routers/
+    knowledge.py       — Module 1 endpoints
+    conversations.py   — Module 7 endpoints
+    drafts.py          — Approval and storage endpoints
+  
+  services/
+    ingestion.py       — Module 1 pipeline logic
+    retrieval.py       — Module 6 retrieval logic
+    analysis.py        — conversation analysis logic
+    generation.py      — Module 7 draft generation logic
+    feedback.py        — feedback logging logic
+  
+  models/
+    documents.py       — Pydantic models for documents and chunks
+    conversations.py   — Pydantic models for conversations 
+                         and analysis
+    drafts.py          — Pydantic models for drafts and feedback
+  
+  prompts/
+    analysis.py        — all analysis prompt templates
+    generation.py      — all generation prompt templates
+    retrieval.py       — query extraction prompt template
+
+requirements.txt
+.env.example
+README.md
+supabase/
+  schema.sql           — complete SQL schema to run in Supabase
+
+═══════════════════════════════════════
+ENVIRONMENT VARIABLES
+═══════════════════════════════════════
+
+These are all the environment variables the system needs.
+Generate a complete .env.example file with these exact names:
+
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+OPENAI_API_KEY=
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
+OPENAI_MODEL=gpt-4o
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+CHUNK_SIZE=800
+CHUNK_OVERLAP=150
+RETRIEVAL_TOP_K=10
+RETRIEVAL_RERANK_TOP_K=5
+SIMILARITY_THRESHOLD=0.65
+MAX_DRAFT_WORDS=200
+MIN_DRAFT_WORDS=80
+
+═══════════════════════════════════════
+DATABASE SCHEMA
+═══════════════════════════════════════
+
+Generate a complete supabase/schema.sql file that runs 
+cleanly in Supabase SQL editor. It must:
+
+Enable the pgvector extension first with:
+CREATE EXTENSION IF NOT EXISTS vector;
+
+Then create these tables in this exact order:
+
+TABLE: documents
+- id: UUID primary key default gen_random_uuid()
+- filename: TEXT not null
+- file_type: TEXT not null
+- source_type: TEXT 
+  (blog / article / book / newsletter / talk / workshop / other)
+- title: TEXT
+- author: TEXT
+- published_date: DATE
+- word_count: INTEGER
+- status: TEXT default 'processing'
+  (processing / ready / error)
+- error_message: TEXT
+- created_at: TIMESTAMPTZ default now()
+
+TABLE: document_chunks
+- id: UUID primary key default gen_random_uuid()
+- document_id: UUID references documents(id) on delete cascade
+- chunk_index: INTEGER not null
+- content: TEXT not null
+- token_count: INTEGER
+- embedding: vector(1536)
+- created_at: TIMESTAMPTZ default now()
+
+Create an ivfflat index on document_chunks(embedding) using 
+vector_cosine_ops with lists = 100
+
+Create this RPC function in the schema file:
+
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(1536),
+  match_threshold float,
+  match_count int
+)
+RETURNS TABLE (
+  id UUID,
+  document_id UUID,
+  content TEXT,
+  similarity float
+)
+LANGUAGE SQL STABLE AS $$
+  SELECT
+    dc.id,
+    dc.document_id,
+    dc.content,
+    1 - (dc.embedding <=> query_embedding) AS similarity
+  FROM document_chunks dc
+  WHERE 1 - (dc.embedding <=> query_embedding) > match_threshold
+  ORDER BY similarity DESC
+  LIMIT match_count;
+$$;
+
+TABLE: conversations
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null
+  (reddit / bluesky / mastodon / discord / telegram / 
+  threads / youtube / facebook / linkedin / instagram / twitter)
+- post_url: TEXT
+- post_author: TEXT
+- original_post: TEXT not null
+- full_thread: TEXT
+- submitted_at: TIMESTAMPTZ default now()
+- analysis_status: TEXT default 'pending'
+  (pending / analysed / skipped / error)
+
+TABLE: conversation_analysis
+- id: UUID primary key default gen_random_uuid()
+- conversation_id: UUID references conversations(id) 
+  on delete cascade
+- central_topic: TEXT
+- key_tensions: JSONB
+- viewpoints_represented: JSONB
+- emotional_sensitivities: TEXT
+- can_add_value: BOOLEAN
+- value_reasoning: TEXT
+- participation_recommendation: TEXT (COMMENT / DO_NOT_COMMENT)
+- recommendation_reason: TEXT
+- relevance_score: FLOAT
+- created_at: TIMESTAMPTZ default now()
+
+TABLE: response_drafts
+- id: UUID primary key default gen_random_uuid()
+- conversation_id: UUID references conversations(id) 
+  on delete cascade
+- style: TEXT not null
+  (insightful_contribution / facilitative_question / 
+  synthesis_of_viewpoints / constructive_challenge)
+- content: TEXT not null
+- value_explanation: TEXT
+- source_chunk_ids: UUID[]
+- source_document_titles: TEXT[]
+- include_link: BOOLEAN default false
+- suggested_link: TEXT
+- status: TEXT default 'pending'
+  (pending / approved / edited / rejected / saved / posted)
+- edited_content: TEXT
+- rejection_reason: TEXT
+- approved_at: TIMESTAMPTZ
+- posted_at: TIMESTAMPTZ
+- created_at: TIMESTAMPTZ default now()
+
+TABLE: feedback_log
+- id: UUID primary key default gen_random_uuid()
+- draft_id: UUID references response_drafts(id)
+- conversation_id: UUID references conversations(id)
+- action: TEXT (approved / edited / rejected / saved / posted)
+- original_content: TEXT
+- final_content: TEXT
+- rejection_reason: TEXT
+- edit_diff: TEXT
+- created_at: TIMESTAMPTZ default now()
+
+TABLE: processing_logs
+- id: UUID primary key default gen_random_uuid()
+- task_type: TEXT (ingestion / analysis / generation / retrieval)
+- reference_id: UUID (document_id or conversation_id)
+- status: TEXT (started / completed / failed)
+- message: TEXT
+- created_at: TIMESTAMPTZ default now()
+
+═══════════════════════════════════════
+MODULE 1 — KNOWLEDGE BASE INGESTION
+═══════════════════════════════════════
+
+Build app/routers/knowledge.py and app/services/ingestion.py
+
+ROUTER ENDPOINTS:
+
+POST /knowledge/upload
+- Accept multipart file upload plus optional metadata fields:
+  title, source_type, author, published_date
+- Validate file type — accept only pdf, docx, html, txt, md
+- Reject anything else with HTTP 422 and a clear message
+- Upload raw file to Supabase Storage under documents/ prefix
+- Insert record into documents table with status processing
+- Log task started in processing_logs
+- Trigger ingestion pipeline as FastAPI BackgroundTask
+- Return immediately with document id and status processing
+
+GET /knowledge/documents
+- Return all documents ordered by created_at descending
+- Include for each: id, title, filename, source_type, 
+  status, word_count, chunk_count, created_at
+- Include at top level: total_documents, total_chunks, 
+  total_tokens
+
+GET /knowledge/documents/{document_id}
+- Return full document details
+- Include all chunks with chunk_index and content
+- Do not return raw embedding vectors
+
+DELETE /knowledge/documents/{document_id}
+- Delete document record (chunks cascade automatically)
+- Delete file from Supabase Storage
+- Return confirmation
+
+POST /knowledge/documents/{document_id}/reindex
+- Delete all existing chunks for this document
+- Re-download file from Supabase Storage
+- Rerun chunking and embedding pipeline as background task
+- Return immediately with status reindexing
+
+INGESTION PIPELINE in app/services/ingestion.py:
+
+The pipeline runs as a background task and must handle 
+errors gracefully at every step, logging to processing_logs 
+and updating the document status to error with the error 
+message if anything fails.
+
+Step 1 — Parse:
+Download file from Supabase Storage.
+Parse to clean plain text using the correct parser for 
+the file type.
+Clean the text: strip extra whitespace, fix encoding 
+issues, remove repeated headers and footers.
+Count words and update the documents record.
+
+Step 2 — Chunk:
+Use LangChain RecursiveCharacterTextSplitter.
+Read CHUNK_SIZE and CHUNK_OVERLAP from environment variables.
+Separators in order: double newline, single newline, 
+period space, single space, empty string.
+Each chunk must record its index and approximate token count.
+
+Step 3 — Embed:
+Use LangChain OpenAIEmbeddings with model 
+text-embedding-3-small.
+Process chunks in batches of 50.
+Generate one embedding vector per chunk.
+If embedding fails for a batch retry up to 3 times 
+with exponential backoff before marking the document 
+as error.
+
+Step 4 — Store:
+Insert all chunks with their embeddings into 
+document_chunks table in a single batch operation 
+where possible.
+Update document status to ready.
+Log task completed in processing_logs.
+
+═══════════════════════════════════════
+MODULE 6 — KNOWLEDGE RETRIEVAL
+═══════════════════════════════════════
+
+Build app/services/retrieval.py as a standalone reusable 
+service class called RetrievalService.
+
+This service is not exposed as a public API endpoint.
+It is called internally by the analysis and generation 
+pipeline. It must be importable and usable from any 
+other service.
+
+The class must have one primary public method:
+retrieve(conversation_text: str) -> RetrievalResult
+
+Where RetrievalResult contains:
+- context_block: str (formatted context ready for prompts)
+- source_chunks: list of chunk metadata objects each 
+  containing chunk_id, document_id, document_title, 
+  source_type, content, similarity_score, rerank_score
+
+STEP 1 — QUERY EXTRACTION:
+Use the active LLM (Ollama or OpenAI based on LLM_PROVIDER).
+Use the prompt template in app/prompts/retrieval.py.
+The prompt must instruct the model to identify the core 
+topic, question, or tension in the conversation that a 
+thoughtful response would need to address, and return 
+only a focused semantic search query of 10 to 20 words 
+with no social media language or usernames.
+Parse the model output to extract just the query string.
+
+STEP 2 — VECTOR SEARCH:
+Embed the extracted query using OpenAIEmbeddings.
+Call the match_documents Supabase RPC function.
+Use SIMILARITY_THRESHOLD and RETRIEVAL_TOP_K from 
+environment variables.
+Fetch document title and source_type for each result 
+by joining with the documents table.
+If fewer than 3 results are returned lower the threshold 
+by 0.05 and retry once.
+
+STEP 3 — RERANKING:
+Pass all results to the active LLM with the conversation 
+text and ask it to score each chunk from 0 to 10 for 
+how directly and meaningfully it would help contribute 
+to this specific conversation.
+The prompt must return scores as JSON with chunk_id 
+and score fields.
+Sort by rerank score descending.
+Keep only the top RETRIEVAL_RERANK_TOP_K results.
+
+STEP 4 — CONTEXT ASSEMBLY:
+Format the final chunks into a structured context block.
+Each chunk must be labelled with its source number, 
+document title, and source type.
+Separate chunks with a clear delimiter.
+Return the context block string plus the full source 
+metadata list.
+
+═══════════════════════════════════════
+MODULE 7 — CONVERSATION ANALYSIS 
+AND RESPONSE GENERATION
+═══════════════════════════════════════
+
+Build app/routers/conversations.py and these service files:
+app/services/analysis.py
+app/services/generation.py
+
+ROUTER ENDPOINTS:
+
+POST /conversations/submit
+- Accept: platform, post_url, post_author, 
+  original_post, full_thread
+- Validate platform is one of the allowed values
+- Insert into conversations table
+- Log task started in processing_logs
+- Trigger full pipeline as BackgroundTask
+- Return conversation id and status pending immediately
+
+GET /conversations
+- Return paginated list of conversations
+- Include: id, platform, post_author, analysis_status, 
+  relevance_score, submitted_at, draft_count
+- Support query parameters: status, platform, page, 
+  page_size default 20
+- Order by submitted_at descending
+
+GET /conversations/{conversation_id}
+- Return full conversation with its analysis and 
+  all response drafts
+- Include full content of each draft with source 
+  document titles
+
+FULL PIPELINE in app/services/analysis.py 
+and app/services/generation.py:
+
+STAGE 1 — RETRIEVAL:
+Call RetrievalService.retrieve() with the full_thread text.
+If full_thread is empty use original_post instead.
+Store the returned source metadata for use in draft storage.
+
+STAGE 2 — CONVERSATION ANALYSIS:
+Use the active LLM with the analysis prompt from 
+app/prompts/analysis.py.
+
+The analysis prompt must:
+Instruct the model to act as an experienced dialogue 
+facilitator helping a thoughtful coach and author decide 
+whether and how to engage in a public conversation.
+Pass the full conversation text.
+Pass the retrieved context block so the model knows 
+what relevant material exists.
+Instruct the model to return ONLY valid JSON with 
+these exact fields:
+  central_topic: string
+  key_tensions: array of strings
+  viewpoints_represented: array of strings
+  emotional_sensitivities: string
+  can_add_value: boolean
+  value_reasoning: string
+  participation_recommendation: COMMENT or DO_NOT_COMMENT
+  recommendation_reason: string
+  relevance_score: float between 0 and 1
+
+Parse the JSON response strictly.
+If parsing fails retry the LLM call once with an 
+explicit instruction to return only valid JSON.
+Store result in conversation_analysis table.
+Update conversation analysis_status to analysed.
+
+STAGE 3 — SKIP CHECK:
+If participation_recommendation is DO_NOT_COMMENT:
+Update conversation analysis_status to skipped.
+Log task completed in processing_logs with a message 
+explaining the skip reason.
+Stop the pipeline here. Do not generate any drafts.
+
+STAGE 4 — DRAFT GENERATION:
+If participation_recommendation is COMMENT:
+Generate all 4 drafts in parallel using LangChain 
+RunnableParallel.
+Each draft call uses the same inputs:
+  - retrieved context block from Stage 1
+  - conversation analysis JSON from Stage 2
+  - original conversation text
+  - style-specific instruction from app/prompts/generation.py
+  - word count constraint between MIN_DRAFT_WORDS 
+    and MAX_DRAFT_WORDS
+
+The generation prompt must instruct the model to:
+Write in first person as the author.
+Ground every claim in the retrieved context.
+Speak as a thoughtful participant not an authority.
+Help readers think more deeply rather than simply agree.
+Find common ground between differing perspectives.
+Challenge ideas without diminishing people.
+Only suggest a link to source material if it would 
+genuinely help the reader not for self-promotion.
+After the response content return a JSON block with:
+  value_explanation: one sentence on why this adds value
+  source_documents_used: array of document titles drawn from
+  include_link: boolean
+  suggested_link: string or null
+
+The four style instructions must be defined in 
+app/prompts/generation.py as constants:
+
+INSIGHTFUL_CONTRIBUTION:
+Share one specific insight drawn directly from the 
+retrieved source material that adds something genuinely 
+new and substantive to this conversation. Be concrete 
+and grounded. Do not make general statements.
+
+FACILITATIVE_QUESTION:
+Ask exactly one genuine open question that invites deeper 
+thinking from all participants. The question must not be 
+rhetorical or leading. It should open inquiry rather than 
+steer people toward a predetermined answer.
+
+SYNTHESIS_OF_VIEWPOINTS:
+Acknowledge at least two different perspectives already 
+present in the conversation. Find and articulate genuine 
+common ground between them. Offer a unifying frame that 
+helps participants feel understood rather than judged.
+
+CONSTRUCTIVE_CHALLENGE:
+Identify one key assumption or gap in the conversation 
+and challenge it respectfully. The goal is to advance 
+collective understanding not to win an argument. Make 
+disagreement feel psychologically safe.
+
+Parse each draft response to separate the main content 
+from the JSON metadata block.
+Store all 4 drafts in response_drafts table with 
+status pending.
+Link source_chunk_ids and source_document_titles 
+from the retrieval results.
+Log task completed in processing_logs.
+
+═══════════════════════════════════════
+MODULE 9 — APPROVAL AND STORAGE
+═══════════════════════════════════════
+
+Build app/routers/drafts.py and app/services/feedback.py
+
+ENDPOINTS:
+
+POST /drafts/{draft_id}/approve
+- Verify draft exists and status is pending
+- Set status to approved
+- Set approved_at to now
+- Log to feedback_log: action approved, 
+  original_content and final_content both set to 
+  the draft content
+- Return updated draft
+
+POST /drafts/{draft_id}/edit-and-approve
+- Accept body field: edited_content (required, non-empty)
+- Verify draft exists and status is pending
+- Store edited_content in the edited_content column
+- Set status to edited
+- Set approved_at to now
+- Log to feedback_log: action edited,
+  original_content set to original draft content,
+  final_content set to edited_content,
+  edit_diff set to a simple summary of character 
+  count difference and first changed sentence
+- Return updated draft
+
+POST /drafts/{draft_id}/reject
+- Accept optional body field: rejection_reason
+- Set status to rejected
+- Log to feedback_log: action rejected with reason
+- Return updated draft
+
+POST /drafts/{draft_id}/save
+- Set status to saved
+- Log to feedback_log: action saved
+- Return updated draft
+
+POST /drafts/{draft_id}/mark-posted
+- Set status to posted
+- Set posted_at to now
+- Log to feedback_log: action posted,
+  final_content set to edited_content if exists, 
+  otherwise original content
+- Return updated draft
+
+GET /drafts/feedback-summary
+- Return aggregated stats:
+  total_drafts_generated: integer
+  approval_rate: float (approved + edited / total)
+  edit_rate: float (edited / total)
+  rejection_rate: float (rejected / total)
+  most_common_rejection_reasons: top 5 with counts
+  best_performing_styles: styles ranked by approval rate
+  average_edit_length_vs_original: float ratio
+
+═══════════════════════════════════════
+ERROR HANDLING AND RELIABILITY
+═══════════════════════════════════════
+
+Every LLM call must be wrapped in retry logic:
+- Maximum 3 retries
+- Exponential backoff: 2 seconds, 4 seconds, 8 seconds
+- On final failure log to processing_logs with status 
+  failed and the error message
+- Update the parent document or conversation status 
+  to error
+
+Every Supabase database call must be wrapped in 
+try/except blocks.
+Never expose raw database errors to API consumers.
+Return clean error responses with HTTP status codes:
+  400 for validation errors
+  404 for not found
+  422 for unprocessable content
+  500 for internal errors
+
+All endpoints must return this response envelope:
+{
+  "success": boolean,
+  "data": object or null,
+  "error": string or null,
+  "timestamp": ISO timestamp string
+}
+
+═══════════════════════════════════════
+README REQUIREMENTS
+═══════════════════════════════════════
+
+Generate a complete README.md with step by step 
+setup instructions covering:
+
+1. Create a new Supabase project
+2. Enable the pgvector extension in Supabase SQL editor
+3. Run supabase/schema.sql in the SQL editor
+4. Copy .env.example to .env and fill in all values
+5. Install Ollama from ollama.ai
+6. Pull the required model:
+   ollama pull llama3
+7. Install Python dependencies:
+   pip install -r requirements.txt
+8. Run the FastAPI server:
+   uvicorn app.main:app --reload
+9. Test the upload endpoint with a sample PDF
+10. Test the conversation submission endpoint
+11. How to switch from Ollama to OpenAI:
+    Change LLM_PROVIDER=ollama to LLM_PROVIDER=openai 
+    in the .env file. Nothing else changes.

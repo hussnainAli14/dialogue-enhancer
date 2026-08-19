@@ -215,6 +215,9 @@ export const discoveryApi = {
       client.get("/discovery/runs", { params })
     ),
 
+  getRun: (id: string) =>
+    unwrap<{ run: DiscoveryRun; posts: unknown[] }>(client.get(`/discovery/runs/${id}`)),
+
   getPosts: (
     params: {
       platform?: string;

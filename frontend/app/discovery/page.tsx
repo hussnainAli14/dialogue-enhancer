@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Radar } from "lucide-react";
 import { discoveryApi } from "@/lib/api";
@@ -81,6 +81,36 @@ function OverviewTab() {
   const [status, setStatus] = useState<DiscoveryStatus | null>(null);
   const [runs, setRuns] = useState<DiscoveryRun[]>([]);
   const [triggering, setTriggering] = useState(false);
+  const [runningRun, setRunningRun] = useState<DiscoveryRun | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Poll an in-progress run until it finishes, showing live counts.
+  const pollRun = useCallback(
+    async (id: string) => {
+      try {
+        const { run } = await discoveryApi.getRun(id);
+        setRunningRun(run);
+        if (run.status === "running") {
+          pollRef.current = setTimeout(() => pollRun(id), 3000);
+        } else {
+          setRunningRun(null);
+          showToast(
+            run.status === "completed" ? "success" : "error",
+            `Discovery ${run.status}: fetched ${run.posts_fetched}, submitted ${run.posts_submitted}.`
+          );
+          load();
+        }
+      } catch {
+        pollRef.current = setTimeout(() => pollRun(id), 4000);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showToast]
+  );
+
+  useEffect(() => () => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -104,9 +134,25 @@ function OverviewTab() {
   const runNow = async () => {
     setTriggering(true);
     try {
-      await discoveryApi.trigger();
-      showToast("success", "Discovery run started.");
-      setTimeout(load, 1500);
+      const res = await discoveryApi.trigger();
+      if (res.run_id) {
+        setRunningRun({
+          id: res.run_id,
+          trigger_type: "manual",
+          status: "running",
+          platforms_checked: null,
+          posts_fetched: 0,
+          posts_scored: 0,
+          posts_submitted: 0,
+          posts_filtered: 0,
+          posts_duplicated: 0,
+          error_message: null,
+          started_at: new Date().toISOString(),
+          completed_at: null,
+          duration_seconds: null,
+        });
+        pollRun(res.run_id);
+      }
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Trigger failed");
     } finally {
@@ -137,13 +183,33 @@ function OverviewTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={runNow} loading={triggering}>
-          Run Discovery Now
+        <Button onClick={runNow} loading={triggering || !!runningRun} disabled={!!runningRun}>
+          {runningRun ? "Discovery running…" : "Run Discovery Now"}
         </Button>
-        <Button variant={status.is_enabled ? "ghost" : "secondary"} onClick={toggleEnabled}>
+        <Button
+          variant={status.is_enabled ? "ghost" : "secondary"}
+          onClick={toggleEnabled}
+          disabled={!!runningRun}
+        >
           {status.is_enabled ? "Pause Discovery" : "Enable Discovery"}
         </Button>
       </div>
+
+      {runningRun && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 p-4">
+          <LoadingSpinner size="sm" />
+          <span className="text-sm font-medium text-accent-light">
+            Discovery running…
+          </span>
+          <span className="text-sm text-text-secondary">
+            fetched {runningRun.posts_fetched} · scored {runningRun.posts_scored} · submitted{" "}
+            {runningRun.posts_submitted} · filtered {runningRun.posts_filtered}
+          </span>
+          <span className="ml-auto text-xs text-text-muted">
+            Fetching &amp; scoring can take a little while — this updates live.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="Scheduler" value={status.scheduler_running ? "Running" : "Stopped"} />

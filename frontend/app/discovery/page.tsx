@@ -671,7 +671,11 @@ function RunHistoryTab() {
                     <tr className="border-b border-border/50 bg-background/40">
                       <td colSpan={8} className="p-3 text-xs text-text-secondary">
                         Platforms: {(r.platforms_checked || []).join(", ") || "—"} · Duplicates: {r.posts_duplicated}
-                        {r.error_message && <span className="text-danger"> · Error: {r.error_message}</span>}
+                        {r.error_message && (
+                          <span className={r.status === "failed" ? "text-danger" : "text-text-secondary"}>
+                            {" "}· {r.status === "failed" ? "Error" : "Outcome"}: {r.error_message}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )}

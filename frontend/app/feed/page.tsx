@@ -99,6 +99,12 @@ export default function FeedPage() {
     [data]
   );
 
+  // Conversations submitted but still being analysed (no drafts yet).
+  const analysingCount = useMemo(
+    () => (data?.conversations ?? []).filter((c) => c.analysis_status === "pending").length,
+    [data]
+  );
+
   // Posted-today count needs draft-level data; sample recent conversations.
   useEffect(() => {
     let mounted = true;
@@ -200,6 +206,26 @@ export default function FeedPage() {
           <p className="text-xs text-text-muted">Discovered today</p>
         </div>
       </div>
+
+      {analysingCount > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 p-4">
+          <RefreshCw className="h-4 w-4 animate-spin text-accent-light" />
+          <span className="text-sm text-text-primary">
+            <strong>{analysingCount}</strong> conversation{analysingCount === 1 ? "" : "s"} being
+            analysed…
+          </span>
+          <span className="text-sm text-text-secondary">
+            New drafts appear here automatically when ready (usually under a minute). Some may be
+            skipped if the system recommends not commenting.
+          </span>
+          <a
+            href="/conversations?status=pending"
+            className="ml-auto text-xs text-accent-light hover:underline"
+          >
+            View in progress →
+          </a>
+        </div>
+      )}
 
       <div className="mt-6 space-y-4">
         {loading && !data ? (

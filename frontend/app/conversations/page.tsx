@@ -22,7 +22,11 @@ import ConfirmDialog from "@/components/shared/ConfirmDialog";
 export default function ConversationsPage() {
   const router = useRouter();
   const { showToast } = useToast();
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("status") ?? ""
+      : ""
+  );
   const [platformFilter, setPlatformFilter] = useState("");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");

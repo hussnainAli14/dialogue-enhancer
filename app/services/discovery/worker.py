@@ -216,7 +216,10 @@ class DiscoveryWorker:
             "posts_submitted": result.posts_submitted,
             "posts_filtered": result.posts_filtered,
             "posts_duplicated": result.posts_duplicated,
-            "error_message": error,
+            # Persist a human-readable outcome for every run (e.g. "Daily limit
+            # reached", "No connected platforms", or the success summary) so the
+            # run history explains why a run did what it did.
+            "error_message": error or message,
         })
         log_task("analysis", run_id, status if status != "completed" else "completed", message)
         return result

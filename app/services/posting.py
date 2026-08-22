@@ -9,10 +9,10 @@ from app.services import token_store
 from app.services.connections.factory import get_connector
 
 # Platforms with a working post_reply / post_exists implementation.
-SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit"}
+SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord"}
 
 # Hard per-post character limits.
-PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500, "reddit": 10000}
+PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500, "reddit": 10000, "discord": 2000}
 
 
 def _resolve_target(supabase, conversation_id: str, conv: dict) -> dict:
@@ -20,13 +20,18 @@ def _resolve_target(supabase, conversation_id: str, conv: dict) -> dict:
     discovered_posts row (exact platform post id), fall back to post_url."""
     dp = (
         supabase.table("discovered_posts")
-        .select("post_id, post_url")
+        .select("post_id, post_url, community_id")
         .eq("conversation_id", conversation_id)
         .limit(1)
         .execute()
     ).data
     if dp:
-        return {"uri": dp[0]["post_id"], "id": dp[0]["post_id"], "post_url": dp[0].get("post_url")}
+        return {
+            "uri": dp[0]["post_id"],
+            "id": dp[0]["post_id"],
+            "community_id": dp[0].get("community_id"),
+            "post_url": dp[0].get("post_url"),
+        }
     if conv.get("post_url"):
         return {"post_url": conv["post_url"]}
     return {}

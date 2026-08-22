@@ -14,8 +14,8 @@ from app.services.connections.base import BaseConnector, UniversalPost
 API = "https://discord.com/api/v10"
 # read messages + identify user; bot needs message content intent enabled in the portal.
 OAUTH_SCOPES = ["identify", "guilds"]
-# permissions: View Channels (1024) + Read Message History (65536) = 66560
-BOT_PERMISSIONS = 66560
+# permissions: View Channels (1024) + Send Messages (2048) + Read Message History (65536) = 68608
+BOT_PERMISSIONS = 68608
 
 
 class DiscordConnector(BaseConnector):
@@ -111,6 +111,54 @@ class DiscordConnector(BaseConnector):
             async with httpx.AsyncClient(timeout=15) as http:
                 res = await http.get(
                     f"{API}/users/@me",
+                    headers={"Authorization": f"Bot {settings.DISCORD_BOT_TOKEN}"},
+                )
+                return res.status_code == 200
+        except Exception:
+            return False
+
+    @staticmethod
+    def _channel_message(target: dict) -> tuple[str, str]:
+        """Return (channel_id, message_id) from the target, resolving from the
+        post URL if needed (…/channels/{guild}/{channel}/{message})."""
+        channel_id = target.get("community_id") or ""
+        message_id = target.get("id") or target.get("post_id") or ""
+        if (not channel_id or not message_id) and target.get("post_url"):
+            parts = str(target["post_url"]).rstrip("/").split("/")
+            if len(parts) >= 2:
+                message_id = message_id or parts[-1]
+                channel_id = channel_id or parts[-2]
+        return str(channel_id), str(message_id)
+
+    async def post_reply(self, connection: PlatformConnection, target: dict, text: str) -> dict:
+        """Post a reply message in the channel, referencing the original message."""
+        channel_id, message_id = self._channel_message(target)
+        if not channel_id:
+            raise ValueError("Missing Discord channel id to post to.")
+        payload: dict = {"content": text}
+        if message_id:
+            payload["message_reference"] = {"message_id": message_id, "fail_if_not_exists": False}
+        async with httpx.AsyncClient(timeout=30) as http:
+            res = await http.post(
+                f"{API}/channels/{channel_id}/messages",
+                json=payload,
+                headers={"Authorization": f"Bot {settings.DISCORD_BOT_TOKEN}"},
+            )
+            res.raise_for_status()
+            m = res.json()
+        return {
+            "id": m["id"],
+            "url": f"https://discord.com/channels/@me/{channel_id}/{m['id']}",
+        }
+
+    async def post_exists(self, connection: PlatformConnection, target: dict) -> bool:
+        channel_id, message_id = self._channel_message(target)
+        if not channel_id or not message_id:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                res = await http.get(
+                    f"{API}/channels/{channel_id}/messages/{message_id}",
                     headers={"Authorization": f"Bot {settings.DISCORD_BOT_TOKEN}"},
                 )
                 return res.status_code == 200

@@ -100,10 +100,9 @@ export default function ConversationDetailPage() {
       ),
   };
 
-  const canPost =
-    data?.platform === "bluesky" ||
-    data?.platform === "mastodon" ||
-    data?.platform === "reddit";
+  const canPost = ["bluesky", "mastodon", "reddit", "discord"].includes(
+    data?.platform ?? ""
+  );
 
   // Freshness check: is the original source post still live on the platform?
   const [sourceExists, setSourceExists] = useState<boolean | null | undefined>(undefined);

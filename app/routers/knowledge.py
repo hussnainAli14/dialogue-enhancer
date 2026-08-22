@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import get_supabase, log_task
 from app.envelope import fail, ok
 from app.models.documents import ALLOWED_FILE_TYPES
-from app.services.ingestion import run_ingestion
+from app.services.ingestion import doc_converter_available, run_ingestion
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -32,6 +32,12 @@ async def upload_document(
     if not file_type:
         return fail(
             f"Unsupported file type. Accepted: {', '.join(sorted(ALLOWED_FILE_TYPES))}", 422
+        )
+    if file_type == "doc" and not doc_converter_available():
+        return fail(
+            "Legacy .doc files aren't supported on this server. Please save it as .docx "
+            "(or PDF) and upload that instead.",
+            422,
         )
 
     try:
@@ -129,6 +135,28 @@ async def list_documents():
         )
     except Exception:
         return fail("Failed to list documents", 500)
+
+
+@router.get("/documents/stats")
+async def documents_stats():
+    """Knowledge-base totals. Declared before /documents/{id} so the literal
+    'stats' path isn't captured as a document id."""
+    try:
+        supabase = get_supabase()
+        docs = supabase.table("documents").select("id", count="exact").execute()
+        chunks = (
+            supabase.table("document_chunks").select("token_count").execute()
+        ).data or []
+        total_tokens = sum(c.get("token_count") or 0 for c in chunks)
+        return ok(
+            {
+                "total_documents": docs.count or 0,
+                "total_chunks": len(chunks),
+                "total_tokens": total_tokens,
+            }
+        )
+    except Exception:
+        return fail("Failed to load document stats", 500)
 
 
 @router.get("/documents/{document_id}")

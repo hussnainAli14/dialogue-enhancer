@@ -140,6 +140,19 @@ def _parse_plain(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def doc_converter_available() -> bool:
+    """True if a legacy .doc can be parsed on this host (LibreOffice or MS Word).
+    Returns False on servers without either (e.g. a plain Linux host)."""
+    if shutil.which("soffice") or shutil.which("libreoffice"):
+        return True
+    try:
+        import win32com.client  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
 PARSERS = {
     "pdf": _parse_pdf,
     "docx": _parse_docx,

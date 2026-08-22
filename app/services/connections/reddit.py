@@ -10,7 +10,7 @@ from app.config import settings
 from app.schemas.connections import ConnectionResult, PlatformConnection
 from app.services.connections.base import BaseConnector, UniversalPost
 
-SCOPES = ["read", "identity"]
+SCOPES = ["read", "identity", "submit"]
 
 
 class _RateLimiter:
@@ -86,6 +86,48 @@ class RedditConnector(BaseConnector):
         def _work() -> bool:
             reddit = self._client(refresh_token=connection.refresh_token)
             return reddit.user.me() is not None
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _submission_id(target: dict) -> str:
+        sid = target.get("id") or target.get("post_id") or target.get("uri") or ""
+        # Accept a full name like "t3_abc123" or a bare base36 id.
+        return sid.split("_")[-1] if sid else ""
+
+    async def post_reply(self, connection: PlatformConnection, target: dict, text: str) -> dict:
+        """Add a top-level comment to a submission."""
+
+        def _work() -> dict:
+            reddit = self._client(refresh_token=connection.refresh_token)
+            reddit.read_only = False
+            sub_id = self._submission_id(target)
+            if not sub_id:
+                raise ValueError("Missing Reddit submission id to reply to.")
+            comment = reddit.submission(id=sub_id).reply(text)
+            return {"id": comment.id, "url": f"https://reddit.com{comment.permalink}"}
+
+        return await asyncio.to_thread(_work)
+
+    async def post_exists(self, connection: PlatformConnection, target: dict) -> bool:
+        """True if the submission is still available (not removed/deleted)."""
+
+        def _work() -> bool:
+            reddit = self._client(refresh_token=connection.refresh_token)
+            reddit.read_only = True
+            sub_id = self._submission_id(target)
+            if not sub_id:
+                raise ValueError("Missing Reddit submission id.")
+            submission = reddit.submission(id=sub_id)
+            if getattr(submission, "removed_by_category", None):
+                return False
+            # A deleted post has no author and a placeholder body.
+            if submission.author is None and (submission.selftext or "") in ("[deleted]", "[removed]"):
+                return False
+            return True
 
         try:
             return await asyncio.to_thread(_work)

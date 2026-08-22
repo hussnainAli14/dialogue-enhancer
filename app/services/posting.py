@@ -9,10 +9,10 @@ from app.services import token_store
 from app.services.connections.factory import get_connector
 
 # Platforms with a working post_reply / post_exists implementation.
-SUPPORTED_POSTING = {"bluesky", "mastodon"}
+SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit"}
 
 # Hard per-post character limits.
-PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500}
+PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500, "reddit": 10000}
 
 
 def _resolve_target(supabase, conversation_id: str, conv: dict) -> dict:

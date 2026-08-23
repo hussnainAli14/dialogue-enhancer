@@ -134,6 +134,71 @@ class RedditConnector(BaseConnector):
         except Exception:
             return False
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        from app.services.community import DiscoveredCommunity
+
+        def _work():
+            reddit = self._client()
+            reddit.read_only = True
+            out: list[DiscoveredCommunity] = []
+            seen: set[str] = set()
+            for kw in keywords:
+                self.rate.tick()
+                for sub in reddit.subreddits.search(kw, limit=limit):
+                    name = sub.display_name
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    active = getattr(sub, "accounts_active", None) or 0
+                    level = "high" if active > 500 else "medium" if active > 50 else "low"
+                    out.append(
+                        DiscoveredCommunity(
+                            platform="reddit",
+                            community_id=name,
+                            community_name=f"r/{name}",
+                            community_url=f"https://reddit.com/r/{name}",
+                            description=getattr(sub, "public_description", None),
+                            member_count=getattr(sub, "subscribers", None),
+                            activity_level=level,
+                            discovered_via_keywords=[kw],
+                        )
+                    )
+            return out
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        from app.services.community import DiscoveredCommunity
+
+        def _work():
+            reddit = self._client()
+            reddit.read_only = True
+            username = handle.lstrip("u/").strip("/ ")
+            counts: dict[str, int] = {}
+            for c in reddit.redditor(username).comments.new(limit=100):
+                counts[c.subreddit.display_name] = counts.get(c.subreddit.display_name, 0) + 1
+            top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+            return [
+                DiscoveredCommunity(
+                    platform="reddit",
+                    community_id=name,
+                    community_name=f"r/{name}",
+                    community_url=f"https://reddit.com/r/{name}",
+                    activity_level="unknown",
+                    discovery_method="people_based",
+                )
+                for name, _ in top
+            ]
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

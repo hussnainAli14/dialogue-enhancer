@@ -28,6 +28,12 @@ class DiscoverySettingsUpdate(BaseModel):
     max_conversations_per_day: int | None = Field(default=None, ge=0)
     min_relevance_score: float | None = Field(default=None, ge=0, le=1)
     scoring_batch_size: int | None = Field(default=None, ge=1)
+    # ── Module 3 — community discovery settings ──
+    community_discovery_enabled: bool | None = None
+    community_schedule_hours: int | None = Field(default=None, ge=1)
+    max_communities_per_platform: int | None = Field(default=None, ge=1)
+    min_community_relevance_score: float | None = Field(default=None, ge=0, le=1)
+    max_community_suggestions: int | None = Field(default=None, ge=1)
 
 
 # ── Scoring ───────────────────────────────────────────

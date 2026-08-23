@@ -107,6 +107,49 @@ class ThreadsConnector(BaseConnector):
         except Exception:
             return False
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("threads")
+        if not conn or conn.status != "connected":
+            return []
+
+        out: list[DiscoveredCommunity] = []
+        try:
+            async with httpx.AsyncClient(timeout=30) as http:
+                for kw in keywords:
+                    res = await http.get(
+                        f"{GRAPH}/v1.0/keyword_search",
+                        params={
+                            "q": kw,
+                            "search_type": "TOP",
+                            "fields": "id",
+                            "access_token": conn.access_token,
+                        },
+                    )
+                    count = len(res.json().get("data", [])) if res.status_code == 200 else 0
+                    level = "high" if count > 20 else "medium" if count > 5 else "low"
+                    tag = kw.replace(" ", "")
+                    out.append(
+                        DiscoveredCommunity(
+                            platform="threads",
+                            community_id=tag,
+                            community_name=f"#{tag}",
+                            community_url=f"https://www.threads.net/search?q={kw}",
+                            activity_level=level,
+                            discovered_via_keywords=[kw],
+                        )
+                    )
+        except Exception:
+            return []
+        return out
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        # Threads person-level topic extraction needs the person's own token; skip.
+        return []
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

@@ -16,7 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { conversationsApi, discoveryApi, knowledgeApi } from "@/lib/api";
+import { communityApi, conversationsApi, discoveryApi, knowledgeApi } from "@/lib/api";
 import type { DiscoveryStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +51,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
   const [awaitingCount, setAwaitingCount] = useState(0);
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryStatus | null>(null);
+  const [suggestionsCount, setSuggestionsCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -73,6 +74,12 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
         if (mounted) setDiscovery(d);
       } catch {
         if (mounted) setDiscovery(null);
+      }
+      try {
+        const s = await communityApi.getSuggestions({ status: "pending" });
+        if (mounted) setSuggestionsCount(s.counts.pending);
+      } catch {
+        /* non-critical */
       }
     };
     check();
@@ -127,6 +134,11 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
               {item.badge && awaitingCount > 0 && (
                 <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs text-text-primary md:hidden lg:inline">
                   {awaitingCount}
+                </span>
+              )}
+              {item.href === "/community" && suggestionsCount > 0 && (
+                <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs text-text-primary md:hidden lg:inline">
+                  {suggestionsCount}
                 </span>
               )}
             </Link>

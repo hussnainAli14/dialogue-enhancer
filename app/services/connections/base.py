@@ -72,6 +72,17 @@ class BaseConnector(ABC):
         that support posting; others raise a clear error."""
         raise NotImplementedError(f"Posting is not yet supported for {self.platform}.")
 
+    # ── Module 3 — community discovery (default no-ops) ──────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20) -> list:
+        """Find communities/groups/hashtags matching keywords. Connectors that
+        support it override this; others return an empty list."""
+        return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10) -> list:
+        """Find the communities a person is most active in. Overridden per
+        platform where feasible; others return an empty list."""
+        return []
+
     # Shared helper so connectors don't each reimplement it.
     @staticmethod
     def _matches_keywords(text: str, keywords: list[str]) -> bool:

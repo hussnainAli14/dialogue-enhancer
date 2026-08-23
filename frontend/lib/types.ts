@@ -259,4 +259,61 @@ export interface DiscoverySettings {
   max_conversations_per_day: number;
   min_relevance_score: number;
   scoring_batch_size: number;
+  // Module 3 — community discovery
+  community_discovery_enabled?: boolean;
+  community_schedule_hours?: number;
+  max_communities_per_platform?: number;
+  min_community_relevance_score?: number;
+  max_community_suggestions?: number;
+}
+
+// ── Module 3 — community discovery ────────────────────
+export interface DiscoveryTopic {
+  id: string;
+  topic: string;
+  keywords: string[];
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface MonitoredPerson {
+  id: string;
+  name: string;
+  description: string | null;
+  platform_handles: Record<string, string>;
+  is_active: boolean;
+  last_checked_at: string | null;
+}
+
+export interface CommunitySuggestion {
+  id: string;
+  platform: string;
+  community_id: string;
+  community_name: string;
+  community_url: string | null;
+  description: string | null;
+  member_count: number | null;
+  activity_level: "high" | "medium" | "low" | "unknown" | null;
+  discovery_method: "keyword" | "people_based" | "both";
+  discovered_via_keywords: string[];
+  discovered_via_people: string[];
+  relevance_score: number | null;
+  relevance_reasoning: string | null;
+  suggested_keywords: string[];
+  status: "pending" | "approved" | "rejected" | "already_monitoring";
+}
+
+export interface CommunityDiscoveryRun {
+  id: string;
+  trigger_type: string;
+  discovery_modes: string[] | null;
+  platforms_searched: string[] | null;
+  communities_found: number;
+  communities_new: number;
+  communities_already_known: number;
+  status: "running" | "completed" | "failed" | "partial";
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  duration_seconds: number | null;
 }

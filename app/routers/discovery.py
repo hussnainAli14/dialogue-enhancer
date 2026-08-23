@@ -292,6 +292,26 @@ async def delete_community(community_id: str):
 
 # ── Settings ──────────────────────────────────────────
 
+COMMUNITY_SETTING_KEYS = [
+    "community_discovery_enabled",
+    "community_schedule_hours",
+    "max_communities_per_platform",
+    "min_community_relevance_score",
+    "max_community_suggestions",
+]
+
+
+def _community_settings_row() -> dict:
+    """The extra community-discovery columns from discovery_settings, if present."""
+    try:
+        rows = _supabase().table("discovery_settings").select("*").limit(1).execute().data
+        if rows:
+            return {k: rows[0].get(k) for k in COMMUNITY_SETTING_KEYS}
+    except Exception:
+        pass
+    return {k: None for k in COMMUNITY_SETTING_KEYS}
+
+
 @router.get("/settings")
 async def get_settings():
     try:
@@ -304,6 +324,7 @@ async def get_settings():
                 "max_conversations_per_day": s.max_conversations_per_day,
                 "min_relevance_score": s.min_relevance_score,
                 "scoring_batch_size": s.scoring_batch_size,
+                **_community_settings_row(),
             }
         )
     except Exception as exc:
@@ -314,14 +335,23 @@ async def get_settings():
 async def update_settings(body: DiscoverySettingsUpdate):
     try:
         before = store.get_settings()
+        before_community = _community_settings_row()
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
         updated = store.update_settings(fields)
-        # Reschedule if the interval changed.
+        # Reschedule post-discovery if its interval changed.
         if (
             body.schedule_interval_minutes is not None
             and body.schedule_interval_minutes != before.schedule_interval_minutes
         ):
             scheduler.reschedule(updated.schedule_interval_minutes)
+        # Reschedule community discovery if its interval changed.
+        if (
+            body.community_schedule_hours is not None
+            and body.community_schedule_hours != before_community.get("community_schedule_hours")
+        ):
+            from app.services.community.community_scheduler import reschedule_community_discovery
+
+            reschedule_community_discovery(body.community_schedule_hours)
         return ok(
             {
                 "is_enabled": updated.is_enabled,
@@ -330,6 +360,7 @@ async def update_settings(body: DiscoverySettingsUpdate):
                 "max_conversations_per_day": updated.max_conversations_per_day,
                 "min_relevance_score": updated.min_relevance_score,
                 "scoring_batch_size": updated.scoring_batch_size,
+                **_community_settings_row(),
             }
         )
     except Exception as exc:

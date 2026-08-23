@@ -165,6 +165,45 @@ class DiscordConnector(BaseConnector):
         except Exception:
             return False
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        """Discord has no reliable public server-search API. Attempt the
+        discovery endpoint; return an empty list (not an error) if unavailable."""
+        from app.services.community import DiscoveredCommunity
+
+        out: list[DiscoveredCommunity] = []
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                for kw in keywords:
+                    res = await http.get(
+                        "https://discord.com/api/v9/discovery/search",
+                        params={"query": kw, "limit": min(limit, 10)},
+                    )
+                    if res.status_code != 200:
+                        continue
+                    for hit in (res.json().get("hits") or []):
+                        gid = str(hit.get("id") or hit.get("guild_id") or "")
+                        if not gid:
+                            continue
+                        out.append(
+                            DiscoveredCommunity(
+                                platform="discord",
+                                community_id=gid,
+                                community_name=hit.get("name", "Discord server"),
+                                description=hit.get("description"),
+                                member_count=hit.get("approximate_member_count"),
+                                activity_level="unknown",
+                                discovered_via_keywords=[kw],
+                            )
+                        )
+        except Exception:
+            return []
+        return out
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        # Not feasible without being inside the servers the user is in.
+        return []
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

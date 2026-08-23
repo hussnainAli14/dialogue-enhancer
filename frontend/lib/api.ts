@@ -8,10 +8,14 @@ import type {
   ConversationFilters,
   ConversationListResponse,
   ConversationSubmitData,
+  CommunityDiscoveryRun,
+  CommunitySuggestion,
   DiscoveredPost,
   DiscoveryRun,
   DiscoverySettings,
   DiscoveryStatus,
+  DiscoveryTopic,
+  MonitoredPerson,
   Document,
   DocumentDetail,
   FeedbackSummary,
@@ -262,4 +266,72 @@ export const discoveryApi = {
 
   updateSettings: (data: Partial<DiscoverySettings>) =>
     unwrap<DiscoverySettings>(client.post("/discovery/settings", data)),
+};
+
+export const communityApi = {
+  // Topics
+  getTopics: () => unwrap<{ topics: DiscoveryTopic[] }>(client.get("/community/topics")),
+  addTopic: (data: { topic: string; keywords: string[]; description?: string }) =>
+    unwrap<{ topic: DiscoveryTopic }>(client.post("/community/topics", data)),
+  updateTopic: (id: string, data: Partial<DiscoveryTopic>) =>
+    unwrap<{ topic: DiscoveryTopic }>(client.patch(`/community/topics/${id}`, data)),
+  deleteTopic: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/topics/${id}`)),
+
+  // People
+  getPeople: () => unwrap<{ people: MonitoredPerson[] }>(client.get("/community/people")),
+  addPerson: (data: { name: string; description?: string; platform_handles: Record<string, string> }) =>
+    unwrap<{ person: MonitoredPerson }>(client.post("/community/people", data)),
+  updatePerson: (id: string, data: Partial<MonitoredPerson>) =>
+    unwrap<{ person: MonitoredPerson }>(client.patch(`/community/people/${id}`, data)),
+  deletePerson: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/people/${id}`)),
+
+  // Discovery
+  discover: (body: { modes?: string[]; platforms?: string[] } = {}) =>
+    unwrap<{ run_id: string; status: string }>(client.post("/community/discover", body)),
+  getRuns: (page = 1) =>
+    unwrap<{ page: number; total: number; runs: CommunityDiscoveryRun[] }>(
+      client.get("/community/discover/runs", { params: { page } })
+    ),
+
+  // Suggestions
+  getSuggestions: (params: { platform?: string; status?: string; min_score?: number } = {}) =>
+    unwrap<{
+      suggestions: CommunitySuggestion[];
+      counts: { pending: number; approved: number; rejected: number };
+    }>(client.get("/community/suggestions", { params })),
+  approveSuggestion: (id: string, keywords?: string[]) =>
+    unwrap<{ community: MonitoredCommunity | null }>(
+      client.post(`/community/suggestions/${id}/approve`, keywords ? { keywords } : {})
+    ),
+  rejectSuggestion: (id: string, reason?: string) =>
+    unwrap<{ suggestion: CommunitySuggestion }>(
+      client.post(`/community/suggestions/${id}/reject`, { rejection_reason: reason ?? null })
+    ),
+  approveAll: (minScore: number) =>
+    unwrap<{ approved: number }>(client.post("/community/suggestions/approve-all", { min_score: minScore })),
+  rejectAll: (maxScore: number, reason?: string) =>
+    unwrap<{ rejected: number }>(
+      client.post("/community/suggestions/reject-all", { max_score: maxScore, rejection_reason: reason ?? null })
+    ),
+
+  // Monitored communities
+  getMonitored: () =>
+    unwrap<{ communities: Record<string, MonitoredCommunity[]>; total: number }>(
+      client.get("/community/monitored")
+    ),
+  addMonitored: (data: {
+    platform: string;
+    community_id: string;
+    community_name: string;
+    keywords: string[];
+    priority: number;
+  }) => unwrap<{ community: MonitoredCommunity }>(client.post("/community/monitored", data)),
+  updateMonitored: (
+    id: string,
+    data: Partial<{ keywords: string[]; priority: number; is_active: boolean }>
+  ) => unwrap<{ community: MonitoredCommunity }>(client.patch(`/community/monitored/${id}`, data)),
+  deleteMonitored: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/monitored/${id}`)),
 };

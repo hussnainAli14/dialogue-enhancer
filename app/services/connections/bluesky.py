@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.schemas.connections import ConnectionResult, PlatformConnection
@@ -152,6 +152,80 @@ class BlueskyConnector(BaseConnector):
             }
 
         return await asyncio.to_thread(_work)
+
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("bluesky")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _work():
+            client = self._client(conn)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            out: list[DiscoveredCommunity] = []
+            for kw in keywords:
+                tag = kw.replace(" ", "")
+                res = client.app.bsky.feed.search_posts({"q": kw, "limit": 25})
+                posts = getattr(res, "posts", []) or []
+                recent = sum(
+                    1
+                    for p in posts
+                    if _parse_dt(getattr(p.record, "created_at", None)) >= cutoff
+                )
+                level = "high" if recent > 50 else "medium" if recent > 10 else "low"
+                out.append(
+                    DiscoveredCommunity(
+                        platform="bluesky",
+                        community_id=tag,
+                        community_name=f"#{tag}",
+                        community_url=f"https://bsky.app/hashtag/{tag}",
+                        description=f"Bluesky posts about {kw}",
+                        activity_level=level,
+                        discovered_via_keywords=[kw],
+                    )
+                )
+            return out
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("bluesky")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _work():
+            client = self._client(conn)
+            feed = client.get_author_feed(handle, limit=100)
+            counts: dict[str, int] = {}
+            for item in getattr(feed, "feed", []) or []:
+                text = getattr(item.post.record, "text", "") or ""
+                for tag in re.findall(r"#(\w+)", text):
+                    counts[tag] = counts.get(tag, 0) + 1
+            top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+            return [
+                DiscoveredCommunity(
+                    platform="bluesky",
+                    community_id=t,
+                    community_name=f"#{t}",
+                    community_url=f"https://bsky.app/hashtag/{t}",
+                    discovery_method="people_based",
+                )
+                for t, _ in top
+            ]
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
 
     async def fetch_posts(
         self,

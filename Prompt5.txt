@@ -1,0 +1,1030 @@
+═══════════════════════════════════════
+WHAT YOU ARE BUILDING — READ THIS FIRST
+═══════════════════════════════════════
+
+This prompt covers Module 3 of the AI Dialogue 
+Enhancer system. You are building the Community 
+Discovery and Management module — the part of the 
+system that automatically finds relevant communities, 
+groups, hashtags, and accounts across all connected 
+social media platforms, ranks them by relevance, 
+presents them to the author for approval, and then 
+adds approved ones to the monitored_communities 
+table so Module 4 can start monitoring them.
+
+───────────────────────────────────────
+SYSTEM CONTEXT
+───────────────────────────────────────
+
+The following modules are already built and running:
+
+Module 1  — Knowledge Base Ingestion
+Module 2  — Platform API Connections
+Module 4  — Post Discovery and Scoring
+Module 6  — Knowledge Retrieval (RAG)
+Module 7  — Conversation Analysis and Generation
+Module 8  — Dashboard Frontend (Next.js)
+Module 9  — Approval and Posting Workflow
+Module 10 — Feedback and Learning System
+
+Module 3 feeds directly into Module 4. When a 
+community is approved and added to 
+monitored_communities, Module 4's discovery 
+workers will automatically start monitoring it 
+on their next scheduled run. No additional 
+configuration is needed.
+
+The monitored_communities table already exists 
+in the database from Module 4's migration. 
+Module 3 reads from and writes to this table. 
+It does not recreate it.
+
+───────────────────────────────────────
+WHAT MODULE 3 DOES
+───────────────────────────────────────
+
+Module 3 has three responsibilities:
+
+RESPONSIBILITY 1 — COMMUNITY DISCOVERY:
+Given a set of topics and keywords defined by 
+the author, the system searches all connected 
+platforms for relevant communities, groups, 
+channels, hashtags, and accounts. It also 
+accepts a list of specific people to monitor 
+and discovers which communities those people 
+are active in.
+
+RESPONSIBILITY 2 — COMMUNITY RANKING:
+Each discovered community is scored by the AI 
+for relevance to the author's areas of expertise 
+— coaching, leadership, personal growth, 
+spirituality, and community. Communities are 
+ranked and presented to the author as a 
+shortlist for review.
+
+RESPONSIBILITY 3 — APPROVAL AND ACTIVATION:
+The author reviews the shortlist in the dashboard 
+and approves or rejects each suggested community. 
+Approved communities are added to 
+monitored_communities and become active 
+immediately. Rejected ones are stored with a 
+reason so the system does not suggest them again.
+
+───────────────────────────────────────
+TWO DISCOVERY MODES
+───────────────────────────────────────
+
+MODE 1 — KEYWORD DISCOVERY:
+The author provides a list of topics and keywords. 
+The system searches each connected platform for 
+communities, groups, channels, and hashtags that 
+match those keywords. It evaluates each result 
+for activity level, audience fit, and relevance 
+to the author's work.
+
+MODE 2 — PEOPLE-BASED DISCOVERY:
+The author provides a list of specific people 
+they want to monitor — coaches, authors, thought 
+leaders in their space. The system finds those 
+people's accounts on each platform, identifies 
+the communities and conversations they are most 
+active in, and suggests those communities for 
+monitoring.
+
+Both modes can run together in a single discovery 
+run. Results from both are combined, deduplicated, 
+scored, and presented together.
+
+═══════════════════════════════════════
+TECH STACK — LOCKED IN, DO NOT CHANGE
+═══════════════════════════════════════
+
+Backend (additions to existing FastAPI project):
+- All existing patterns must be followed exactly
+- LLM: active provider via LLM_PROVIDER env var
+  (ChatOllama with llama3 or ChatOpenAI with gpt-4o)
+- Platform APIs: use existing connectors from 
+  app/services/connections/ built in Module 2
+- Database: Supabase PostgreSQL (existing)
+- New platform search methods added to existing 
+  connector classes — do not create new connectors
+
+Frontend (additions to existing Next.js dashboard):
+- Replace the existing Community Manager page 
+  (/community) which currently uses localStorage
+- Connect it fully to the new backend API
+- Follow existing design system and component 
+  patterns exactly
+- Remove the localStorage banner that said 
+  community monitoring is coming soon
+
+This is the module that makes the Community 
+Manager page fully functional. The localStorage 
+placeholder built in Module 8 is now replaced 
+with real backend integration.
+
+═══════════════════════════════════════
+DATABASE SCHEMA ADDITIONS
+═══════════════════════════════════════
+
+Add these tables in a new migration file:
+supabase/migrations/004_community_discovery.sql
+
+Note: monitored_communities already exists. 
+Do not recreate it. Only add new tables.
+
+TABLE: discovery_topics
+The author's list of topics and keywords used 
+for community discovery. This replaces the 
+concept of keywords being hardcoded anywhere.
+
+- id: UUID primary key default gen_random_uuid()
+- topic: TEXT not null
+- keywords: TEXT[] not null
+- description: TEXT
+- is_active: BOOLEAN default true
+- created_at: TIMESTAMPTZ default now()
+- updated_at: TIMESTAMPTZ default now()
+
+TABLE: monitored_people
+The list of specific people whose communities 
+and activity the system tracks.
+
+- id: UUID primary key default gen_random_uuid()
+- name: TEXT not null
+- description: TEXT
+- platform_handles: JSONB not null default '{}'
+  (map of platform to handle/username/url:
+  {"reddit": "u/username", 
+   "bluesky": "name.bsky.social",
+   "mastodon": "@name@instance.social",
+   "youtube": "channel_id_or_handle",
+   "threads": "username",
+   "discord": "user_id",
+   "telegram": "username"})
+- is_active: BOOLEAN default true
+- last_checked_at: TIMESTAMPTZ
+- created_at: TIMESTAMPTZ default now()
+- updated_at: TIMESTAMPTZ default now()
+
+TABLE: community_suggestions
+Stores all communities discovered by the system 
+before the author approves or rejects them.
+Acts as the approval queue.
+
+- id: UUID primary key default gen_random_uuid()
+- platform: TEXT not null
+- community_id: TEXT not null
+- community_name: TEXT not null
+- community_url: TEXT
+- description: TEXT
+- member_count: INTEGER
+- activity_level: TEXT
+  (high / medium / low / unknown)
+- discovery_method: TEXT not null
+  (keyword / people_based / both)
+- discovered_via_keywords: TEXT[]
+- discovered_via_people: TEXT[]
+  (names of monitored people who led to this)
+- relevance_score: FLOAT
+- relevance_reasoning: TEXT
+- suggested_keywords: TEXT[]
+  (keywords the system recommends monitoring 
+  in this community based on its analysis)
+- status: TEXT default 'pending'
+  (pending / approved / rejected / already_monitoring)
+- rejection_reason: TEXT
+- approved_at: TIMESTAMPTZ
+- rejected_at: TIMESTAMPTZ
+- discovery_run_id: UUID
+- created_at: TIMESTAMPTZ default now()
+
+Add unique constraint on (platform, community_id)
+
+TABLE: community_discovery_runs
+Log of every time community discovery runs.
+
+- id: UUID primary key default gen_random_uuid()
+- trigger_type: TEXT (scheduled / manual / api)
+- discovery_modes: TEXT[]
+  (keyword / people_based)
+- platforms_searched: TEXT[]
+- topics_used: TEXT[]
+- people_checked: INTEGER default 0
+- communities_found: INTEGER default 0
+- communities_new: INTEGER default 0
+- communities_already_known: INTEGER default 0
+- status: TEXT default 'running'
+  (running / completed / failed / partial)
+- error_message: TEXT
+- started_at: TIMESTAMPTZ default now()
+- completed_at: TIMESTAMPTZ
+- duration_seconds: FLOAT
+
+Insert seed topics when migration runs:
+INSERT INTO discovery_topics (topic, keywords) VALUES
+('Coaching and Leadership', 
+ ARRAY['coaching', 'leadership', 'executive coach', 
+       'team leadership', 'management']),
+('Personal Growth', 
+ ARRAY['personal development', 'personal growth', 
+       'self improvement', 'habits', 'mindset']),
+('Spirituality and Meaning', 
+ ARRAY['spirituality', 'meaning', 'purpose', 
+       'contemplative', 'inner work']),
+('Community Building', 
+ ARRAY['community', 'belonging', 'facilitation', 
+       'dialogue', 'connection']),
+('Psychological Safety', 
+ ARRAY['psychological safety', 'vulnerability', 
+       'trust', 'accountability', 'conflict']);
+
+═══════════════════════════════════════
+ENVIRONMENT VARIABLES — ADD THESE
+═══════════════════════════════════════
+
+Add to existing .env.example:
+
+COMMUNITY_DISCOVERY_ENABLED=true
+COMMUNITY_DISCOVERY_SCHEDULE_HOURS=24
+MAX_COMMUNITIES_PER_PLATFORM=20
+MIN_COMMUNITY_RELEVANCE_SCORE=0.60
+MAX_SUGGESTIONS_PER_RUN=50
+
+═══════════════════════════════════════
+PROJECT STRUCTURE — NEW FILES TO ADD
+═══════════════════════════════════════
+
+app/
+  routers/
+    community_discovery.py  — all community endpoints
+
+  services/
+    community/
+      __init__.py
+      discovery_worker.py   — main discovery orchestrator
+      keyword_searcher.py   — keyword-based discovery per platform
+      people_tracker.py     — people-based discovery per platform
+      community_scorer.py   — AI relevance scoring for communities
+      community_scheduler.py — APScheduler job for community discovery
+
+  models/
+    community.py            — Pydantic models
+
+supabase/
+  migrations/
+    004_community_discovery.sql
+
+═══════════════════════════════════════
+PLATFORM SEARCH METHODS
+═══════════════════════════════════════
+
+Add new search methods to the existing platform 
+connector classes in app/services/connections/.
+Do not create new connector files. Add methods 
+to the existing ones.
+
+These are the methods to add to each connector:
+
+───────────────────────────────────────
+search_communities(
+  keywords: list[str],
+  limit: int = 20
+) -> list[DiscoveredCommunity]
+───────────────────────────────────────
+
+Searches the platform for communities, groups, 
+channels, or hashtags matching the keywords.
+Returns a list of DiscoveredCommunity objects.
+
+Define DiscoveredCommunity dataclass in 
+app/services/community/__init__.py:
+
+DiscoveredCommunity:
+  platform: str
+  community_id: str
+  community_name: str
+  community_url: str or None
+  description: str or None
+  member_count: int or None
+  activity_level: str  (high/medium/low/unknown)
+  discovery_method: str
+  discovered_via_keywords: list[str]
+  discovered_via_people: list[str]
+  raw_data: dict
+
+Activity level is determined per platform:
+Reddit: based on subscriber count and posts_per_day
+  high if posts_per_day > 10
+  medium if posts_per_day > 2
+  low otherwise
+Bluesky/Mastodon: based on hashtag post frequency
+  high if > 50 posts in last 7 days
+  medium if > 10
+  low otherwise
+Discord/Telegram: unknown by default since 
+  member counts require being inside the server
+YouTube: based on subscriber count
+  high if > 100k subscribers
+  medium if > 10k
+  low otherwise
+Threads: based on post frequency on the topic
+
+Platform-specific implementation:
+
+REDDIT:
+Use PRAW's subreddit search: 
+subreddits.search(keyword, limit=limit)
+For each result capture: display_name, 
+public_description, subscribers, 
+accounts_active, url
+Use accounts_active to determine activity level.
+
+BLUESKY:
+Use atproto's search to find posts with each 
+keyword as a hashtag. Count posts in the last 
+7 days. Return the hashtag itself as a community 
+since Bluesky communities are hashtag-based.
+Also search for starter packs related to keywords 
+if the API supports it.
+
+MASTODON:
+Use Mastodon.py's trending_tags() to find 
+trending hashtags. Filter by keyword relevance.
+Also use search with the keyword to find 
+relevant hashtags and accounts.
+
+DISCORD:
+Discord does not have a public server search API. 
+Use the Discord Discovery API endpoint 
+(https://discord.com/api/v9/discovery/search) 
+with keyword parameters. This is a public 
+endpoint that does not require authentication 
+but may have rate limits.
+If the endpoint is unavailable return an 
+empty list and log a warning — do not fail.
+
+TELEGRAM:
+Use the Telegram Bot API to search for public 
+channels using the inline query endpoint or 
+the resolveUsername method for known channels.
+Search is limited on Telegram — return what 
+is available and log limitations.
+
+THREADS:
+Use the Threads Graph API to search for 
+posts and topics related to the keywords.
+Return topic hashtags as communities.
+
+YOUTUBE:
+Use the YouTube Data API search.list endpoint 
+with type=channel and the keyword as query.
+Return channels as communities.
+Also search for playlists related to the 
+keyword since playlist communities indicate 
+engaged audiences.
+
+───────────────────────────────────────
+get_person_communities(
+  handle: str,
+  limit: int = 10
+) -> list[DiscoveredCommunity]
+───────────────────────────────────────
+
+Given a person's handle on this platform, 
+finds the communities they are most active in.
+
+Platform-specific implementation:
+
+REDDIT:
+Fetch the user's recent comment history using 
+PRAW's redditor(handle).comments.new(limit=100).
+Extract the subreddits they comment in most 
+frequently. Return the top ones by comment count.
+
+BLUESKY:
+Fetch the person's recent posts using atproto's 
+getAuthorFeed. Extract hashtags they use most 
+frequently. Return those hashtags as communities.
+
+MASTODON:
+Fetch the person's recent toots using 
+Mastodon.py's account_statuses(). Extract 
+hashtags they use most. Return those hashtags.
+
+DISCORD:
+Not feasible to track individual user activity 
+across servers without being in those servers. 
+Return empty list and log a note.
+
+TELEGRAM:
+If the person runs a public channel use 
+resolveUsername to find it and return it 
+as a community. Otherwise return empty list.
+
+THREADS:
+Fetch the person's recent posts using the 
+Threads API. Extract hashtags they use. 
+Return as communities.
+
+YOUTUBE:
+Fetch the person's channel using the handle.
+Return their channel as a community to monitor.
+Also return channels they have featured or 
+collaborated with based on their 
+channelSections if available.
+
+═══════════════════════════════════════
+COMMUNITY SCORER
+═══════════════════════════════════════
+
+Build app/services/community/community_scorer.py
+
+Uses the active LLM to score each discovered 
+community for relevance to the author's work.
+
+Build a CommunityScorer class with:
+
+async score_batch(
+  communities: list[DiscoveredCommunity],
+  topics: list[str]
+) -> list[ScoredCommunity]
+
+Scores communities in batches of 15 in one 
+LLM call to minimise API usage.
+
+The scoring prompt must:
+
+Describe the author as a coach and author with 
+15 years of experience in coaching, leadership, 
+personal growth, spirituality, and community 
+building who wants to find online communities 
+where they can make genuinely valuable 
+contributions to discussions.
+
+For each community provide: platform, name, 
+description if available, member count if 
+available, activity level.
+
+Ask the model to score each community from 
+0.0 to 1.0 on these criteria:
+
+  Topic Relevance (weight 0.40):
+  How closely does this community discuss 
+  coaching, leadership, personal growth, 
+  spirituality, or community building?
+
+  Audience Fit (weight 0.30):
+  How well does this community's audience 
+  match the author's typical readers and 
+  the people they want to reach?
+
+  Discussion Quality (weight 0.20):
+  Based on the description and activity level, 
+  does this community appear to have 
+  substantive, thoughtful discussions?
+
+  Contribution Opportunity (weight 0.10):
+  Is this a community where an expert voice 
+  would be welcomed and valued?
+
+Return ONLY valid JSON:
+{
+  "scores": [
+    {
+      "community_id": "platform:community_id",
+      "final_score": 0.78,
+      "topic_relevance": 0.85,
+      "audience_fit": 0.80,
+      "discussion_quality": 0.70,
+      "contribution_opportunity": 0.65,
+      "reasoning": "one sentence explanation",
+      "suggested_keywords": ["keyword1", "keyword2"]
+    }
+  ]
+}
+
+The suggested_keywords field is important — 
+ask the model to suggest 2 to 5 specific 
+keywords to use when monitoring this community 
+based on its topic focus.
+
+Parse strictly. Retry once on failure. 
+Assign 0.0 on second failure and log error.
+
+═══════════════════════════════════════
+DISCOVERY WORKER
+═══════════════════════════════════════
+
+Build app/services/community/discovery_worker.py
+
+Build a CommunityDiscoveryWorker class with:
+
+async run(
+  trigger_type: str = 'scheduled',
+  modes: list[str] = ['keyword', 'people_based'],
+  platforms: list[str] = None
+) -> CommunityDiscoveryResult
+
+If platforms is None discover on all connected 
+platforms. Check platform_connections table to 
+get the list of connected platforms.
+
+STEP 1 — INITIALISE RUN:
+Create record in community_discovery_runs.
+Load active topics from discovery_topics.
+Load active people from monitored_people.
+Check that at least one topic or person exists.
+If neither exists log a warning and return early 
+with a helpful message.
+
+STEP 2 — KEYWORD DISCOVERY (if mode includes keyword):
+For each connected platform:
+  For each active topic:
+    Call connector.search_communities(
+      keywords=topic.keywords,
+      limit=MAX_COMMUNITIES_PER_PLATFORM
+    )
+  Combine results across all topics for this platform.
+  Deduplicate by community_id within the platform.
+  Tag each result with which keywords found it.
+
+STEP 3 — PEOPLE-BASED DISCOVERY 
+(if mode includes people_based):
+For each active person in monitored_people:
+  For each platform where they have a handle:
+    If that platform is connected:
+      Call connector.get_person_communities(
+        handle=person.platform_handles[platform]
+      )
+      Tag each result with the person's name.
+  Update person's last_checked_at.
+
+STEP 4 — COMBINE AND DEDUPLICATE:
+Merge results from keyword and people discovery.
+If the same community was found by both methods 
+set discovery_method to both and merge the 
+keyword and people lists.
+Remove any communities that already exist in 
+monitored_communities (status already_monitoring).
+Remove any communities that already exist in 
+community_suggestions with status approved 
+or rejected (already processed).
+Communities in community_suggestions with status 
+pending are kept — they will be updated if 
+new discovery data adds to them.
+
+STEP 5 — SCORE:
+Call CommunityScorer.score_batch() on all 
+new communities.
+Filter out communities below 
+MIN_COMMUNITY_RELEVANCE_SCORE.
+Sort by relevance_score descending.
+Keep only the top MAX_SUGGESTIONS_PER_RUN.
+
+STEP 6 — SAVE SUGGESTIONS:
+Upsert all scored communities into 
+community_suggestions with status pending.
+For communities already in the table with 
+status pending update their scores and 
+discovery data — do not create duplicates.
+Update community_discovery_runs record 
+with counts and status completed.
+
+STEP 7 — NOTIFY:
+Update the processing_logs table with a 
+summary: how many new communities were found 
+and are awaiting the author's review.
+
+═══════════════════════════════════════
+COMMUNITY SCHEDULER
+═══════════════════════════════════════
+
+Build app/services/community/community_scheduler.py
+
+Add a second APScheduler job to the existing 
+AsyncIOScheduler (do not create a new scheduler).
+The existing scheduler was created in 
+app/services/discovery/scheduler.py for Module 4.
+Import the existing scheduler instance and add 
+the community discovery job to it.
+
+The community discovery job runs every 24 hours 
+by default. Read interval from 
+COMMUNITY_DISCOVERY_SCHEDULE_HOURS env var.
+
+Build:
+
+add_community_discovery_job(scheduler) -> None
+Adds the community discovery job to the 
+existing scheduler instance.
+
+reschedule_community_discovery(hours: int) -> None
+Updates the interval without restarting.
+
+═══════════════════════════════════════
+COMMUNITY DISCOVERY ROUTER
+═══════════════════════════════════════
+
+Build app/routers/community_discovery.py
+
+TOPIC MANAGEMENT:
+
+GET /community/topics
+Returns all discovery topics with their keywords 
+and active status.
+
+POST /community/topics
+Add a new topic.
+Body: topic, keywords array, description.
+Returns created topic.
+
+PATCH /community/topics/{topic_id}
+Update a topic — keywords, description, 
+is_active toggle.
+
+DELETE /community/topics/{topic_id}
+Delete a topic.
+
+PEOPLE MANAGEMENT:
+
+GET /community/people
+Returns all monitored people with their 
+platform handles.
+
+POST /community/people
+Add a person to monitor.
+Body: name, description, platform_handles object.
+Validates that at least one platform handle 
+is provided.
+Returns created person.
+
+PATCH /community/people/{person_id}
+Update a person — handles, description, 
+is_active toggle.
+
+DELETE /community/people/{person_id}
+Remove a person from monitoring.
+
+DISCOVERY:
+
+POST /community/discover
+Triggers an immediate community discovery run.
+Accepts optional body:
+  modes: list of discovery modes to run
+    default ['keyword', 'people_based']
+  platforms: list of platforms to search
+    default all connected platforms
+Runs as FastAPI BackgroundTask.
+Returns run_id immediately.
+
+GET /community/discover/runs
+Returns paginated list of community_discovery_runs.
+20 per page ordered by started_at descending.
+
+GET /community/discover/runs/{run_id}
+Returns full details of one discovery run.
+
+SUGGESTIONS (APPROVAL QUEUE):
+
+GET /community/suggestions
+Returns all pending community suggestions 
+ordered by relevance_score descending.
+Support filtering by: platform, status, 
+min_score.
+Include counts: total pending, total approved, 
+total rejected.
+
+GET /community/suggestions/{suggestion_id}
+Returns full details of one suggestion.
+
+POST /community/suggestions/{suggestion_id}/approve
+Approves a community suggestion.
+Creates a record in monitored_communities with:
+  platform: from suggestion
+  community_id: from suggestion
+  community_name: from suggestion
+  keywords: suggestion.suggested_keywords 
+    (the AI-recommended keywords for this community)
+  is_active: true
+  priority: 1 (default)
+Sets suggestion status to approved.
+Returns the created monitored_community record.
+
+POST /community/suggestions/{suggestion_id}/reject
+Accepts optional body: rejection_reason
+Sets suggestion status to rejected.
+Stores rejection_reason.
+Returns updated suggestion.
+
+POST /community/suggestions/approve-all
+Approves all pending suggestions above a given 
+relevance score threshold.
+Body: min_score (float, required)
+Bulk approves all matching suggestions.
+Returns count of approved communities.
+
+POST /community/suggestions/reject-all
+Rejects all pending suggestions below a given 
+relevance score threshold.
+Body: max_score (float, required), 
+      rejection_reason (optional)
+Returns count of rejected suggestions.
+
+MONITORED COMMUNITIES 
+(replaces the manual endpoints from Module 4):
+
+GET /community/monitored
+Returns all monitored communities grouped by 
+platform. Include for each: platform, name, 
+keywords, is_active, priority, last_fetched_at, 
+post_count, fetch_count.
+
+POST /community/monitored
+Manually add a community without going through 
+the discovery flow.
+Body: platform, community_id, community_name, 
+keywords, priority.
+This is the same as the endpoint from Module 4 
+but now lives under /community/monitored.
+Keep the old /discovery/communities endpoint 
+working as an alias for backwards compatibility.
+
+PATCH /community/monitored/{community_id}
+Update keywords, priority, is_active toggle.
+
+DELETE /community/monitored/{community_id}
+Remove from monitoring.
+
+═══════════════════════════════════════
+FRONTEND — REPLACE COMMUNITY MANAGER PAGE
+═══════════════════════════════════════
+
+Replace the existing /community page in the 
+Next.js dashboard completely. Remove all 
+localStorage code. Connect everything to 
+the new backend API.
+
+The page now has five tabs:
+
+───────────────────────────────────────
+TAB 1 — SUGGESTIONS (default tab)
+───────────────────────────────────────
+
+This is the approval queue — the most important 
+tab the author uses regularly.
+
+HEADER BAR:
+Show three stat chips:
+  Awaiting Review: count of pending suggestions
+  Approved: total approved count
+  Rejected: total rejected count
+
+Show a Run Discovery Now button that calls 
+POST /community/discover and shows a loading 
+state until the background task is acknowledged.
+
+BULK ACTION BAR (shown when suggestions exist):
+Approve All Above: score threshold slider + 
+  Approve button
+Reject All Below: score threshold slider + 
+  Reject button
+
+SUGGESTION CARDS:
+Show all pending suggestions ordered by 
+relevance score descending.
+Each card shows:
+  Platform badge
+  Community name and URL as external link
+  Description (truncated to 100 chars, 
+    expandable on click)
+  Member count and activity level if available
+  How it was discovered: via keywords 
+    (show which keywords) or via people 
+    (show which person) or both
+  Relevance score as a large coloured number
+    green above 0.75
+    yellow 0.60 to 0.75
+    red below 0.60
+  AI reasoning in secondary italic text
+  Suggested keywords as removable chips
+    (author can remove keywords before approving)
+  Two buttons: Approve and Reject
+    Approve calls the approve endpoint with 
+    the current keyword chips as the keywords
+    Reject opens an inline reason input
+
+EMPTY STATE:
+If no pending suggestions show:
+  No suggestions yet. Run discovery to find 
+  communities matching your topics and the 
+  people you follow.
+  With a Run Discovery Now button.
+
+───────────────────────────────────────
+TAB 2 — ACTIVE COMMUNITIES
+───────────────────────────────────────
+
+Shows all currently monitored communities 
+from GET /community/monitored.
+
+Grouped by platform with platform headers 
+showing count per platform.
+
+Each community card shows:
+  Platform badge
+  Community name
+  Keywords as editable chips
+    Click a chip to remove it
+    Click + to add a new keyword
+    Changes auto-save on blur
+  Priority indicator (1-5 stars)
+    Click to change priority
+  Active/Paused toggle (is_active)
+  Last fetched time
+  Posts found count
+  Remove button with confirm dialog
+
+ADD MANUALLY button at top opens a slide-over:
+  Platform dropdown
+  Community ID input with format hint per platform
+  Community Name input
+  Keywords chip input
+  Priority slider
+  Save button
+
+───────────────────────────────────────
+TAB 3 — TOPICS
+───────────────────────────────────────
+
+Manage the topics and keywords used for 
+keyword-based discovery.
+
+Shows all topics as cards.
+Each card: topic name, keywords as chips, 
+active toggle, edit button, delete button.
+
+Edit opens an inline form within the card.
+
+ADD TOPIC button at top:
+  Topic name input
+  Keywords chip input
+  Description input (optional)
+  Save button
+
+───────────────────────────────────────
+TAB 4 — PEOPLE
+───────────────────────────────────────
+
+Manage the list of people whose communities 
+the system tracks.
+
+Shows all people as cards.
+Each card: name, description, platform handles 
+as a list (platform icon + handle), active 
+toggle, edit button, delete button.
+
+ADD PERSON button opens a slide-over:
+  Name input
+  Description input (optional)
+  Platform handles section:
+    For each of the 7 platforms show an input 
+    with the platform icon and a placeholder 
+    showing the expected format:
+    Reddit: u/username
+    Bluesky: name.bsky.social
+    Mastodon: @name@instance.social
+    YouTube: @channelhandle or channel ID
+    Threads: username
+    Discord: user ID (numeric)
+    Telegram: @username
+  All handle fields are optional — at least 
+  one must be filled.
+  Save button
+
+───────────────────────────────────────
+TAB 5 — DISCOVERY HISTORY
+───────────────────────────────────────
+
+Shows the history of community discovery runs 
+from GET /community/discover/runs.
+
+Simple table: Started, Status, Platforms, 
+Found, New, Duration.
+Click a row to expand and see full run details.
+20 per page with pagination.
+
+═══════════════════════════════════════
+SETTINGS PAGE UPDATE
+═══════════════════════════════════════
+
+Add a Community Discovery Settings section 
+to the existing /settings page below the 
+Discovery Settings section.
+
+Fields:
+Community Discovery Enabled: toggle
+Discovery Schedule: number input in hours
+  default 24 (runs once per day)
+Max Communities Per Platform: number input
+  default 20
+Minimum Relevance Score: slider 0 to 1
+  default 0.60
+Max Suggestions Per Run: number input
+  default 50
+
+Save button calls a new settings endpoint.
+Add these settings to the discovery_settings 
+table as new columns rather than a separate 
+table to keep settings in one place:
+
+ALTER TABLE discovery_settings ADD COLUMN 
+  community_discovery_enabled BOOLEAN default true;
+ALTER TABLE discovery_settings ADD COLUMN 
+  community_schedule_hours INTEGER default 24;
+ALTER TABLE discovery_settings ADD COLUMN 
+  max_communities_per_platform INTEGER default 20;
+ALTER TABLE discovery_settings ADD COLUMN 
+  min_community_relevance_score FLOAT default 0.60;
+ALTER TABLE discovery_settings ADD COLUMN 
+  max_community_suggestions INTEGER default 50;
+
+Add these to the GET /discovery/settings and 
+POST /discovery/settings endpoints so the 
+existing settings API covers community 
+discovery settings too.
+
+═══════════════════════════════════════
+SIDEBAR UPDATE
+═══════════════════════════════════════
+
+Add a pending suggestions badge to the 
+Community Manager sidebar item.
+Similar to the awaiting review badge on 
+Today's Feed.
+Show the count of pending community suggestions.
+Poll GET /community/suggestions every 5 minutes 
+to keep this updated.
+If count is 0 hide the badge.
+
+═══════════════════════════════════════
+ERROR HANDLING AND RELIABILITY
+═══════════════════════════════════════
+
+Platform-level isolation:
+If community search fails on one platform 
+continue with the others. Log the failure 
+to processing_logs. Mark that platform as 
+partially completed in the run record.
+
+Rate limit handling:
+Community discovery is less time-sensitive 
+than post discovery. If a rate limit is hit 
+wait for the full retry-after period before 
+continuing. Do not rush.
+
+Empty results:
+If a platform returns no results for any 
+keyword that is normal and expected. 
+Log it as a debug message not an error.
+
+People without handles:
+If a person has no handle for a given platform 
+skip that platform silently for that person.
+
+Duplicate prevention:
+The unique constraint on (platform, community_id) 
+in both monitored_communities and 
+community_suggestions prevents duplicates at 
+the database level. Handle constraint violations 
+gracefully.
+
+Score failures:
+If scoring fails for a batch of communities 
+assign them a score of 0.0 and include them 
+in the suggestions with a note that scoring 
+failed. The author can still manually approve 
+them if they recognise the community.
+
+═══════════════════════════════════════
+README ADDITIONS
+═══════════════════════════════════════
+
+Add a Community Discovery section to the 
+existing README.md covering:
+
+1. How community discovery works end to end
+2. How to add topics and keywords
+3. How to add people to monitor
+4. How to trigger a manual discovery run
+5. How to review and approve suggestions
+6. How approved communities connect to 
+   Module 4's post discovery workers
+7. Understanding relevance scores
+8. How to tune the minimum score threshold
+9. Troubleshooting: no communities being found
+10. Platform-specific limitations:
+    Discord server search may be limited
+    Telegram search is limited by the Bot API
+    People-based discovery on Discord is 
+    not feasible without server access

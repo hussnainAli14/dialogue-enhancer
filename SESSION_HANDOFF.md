@@ -6,6 +6,23 @@ This document is a complete handoff for the project. It explains what the system
 
 ---
 
+## 0. Current status (most recent first)
+
+- **DEPLOYED & LIVE in production:**
+  - Backend (FastAPI) → **Render**: `https://dialogue-enhancer.onrender.com`
+  - Frontend (Next.js) → **Vercel**: `https://dialogue-enhancer.vercel.app`
+  - DB/storage → **Supabase** (same project throughout). Production runs `LLM_PROVIDER=openai`.
+  - GitHub: `hussnainAli14/dialogue-enhancer` (frontend lives in `frontend/`). Pushed via an SSH alias `github-dlasser`.
+- **Git branches:**
+  - `main` = what deploys (Render + Vercel auto-deploy from it). Contains Modules 1,2,4,6,7,8,9,10 + posting for Bluesky/Mastodon/Reddit/Discord + all fixes below. Latest deployed commit: `18af134`.
+  - `module-3-community-discovery` = **Module 3 (Community Discovery)**, pushed but **intentionally not merged/deployed**. Pull this branch to run Module 3 locally. Commit `8e75914`.
+- **Connected platforms (production, in Supabase):** Bluesky + Mastodon (live, verified) and Discord (bot created + code ready). Reddit code is done but **blocked by Reddit's app-approval policy** (a Data API access request form was submitted — awaiting approval). Telegram token set but network-blocked on some local networks.
+- **Posting works** for **Bluesky, Mastodon, Reddit, Discord** (Approve & Post / Post Now / Remove Approval). Threads/YouTube not wired for posting.
+- **Deferred to the end:** Dockerise the Render backend with LibreOffice so `.doc` uploads work in production (currently `.doc` is cleanly rejected on Render; works locally where MS Word/LibreOffice exist).
+- **Working rule:** do **not** `git push`/deploy without explicit approval.
+
+---
+
 ## 1. What this project is
 
 The **AI Dialogue Enhancer** helps a coach/author (15 years of published writing) participate more thoughtfully in online conversations across social platforms. It is a **reflective thinking partner**, not a marketing tool. Quality over quantity.
@@ -19,7 +36,7 @@ End-to-end vision:
 5. Approved responses are posted back to the platform.
 6. Every decision is logged so the system learns.
 
-The build is organised into **modules** (numbered per the original specs). This repo now contains Modules 1, 2, 4, 6, 7, 8, 9, 10.
+The build is organised into **modules** (numbered per the original specs). `main` contains Modules 1, 2, 4, 6, 7, 8, 9, 10; **Module 3** lives on the `module-3-community-discovery` branch.
 
 ---
 
@@ -45,7 +62,7 @@ Module 4 sits in front of this, discovering and scoring posts automatically and 
 
 ## 3. What has been built (module by module)
 
-Original specs live in `Prompt.txt` (Modules 1/6/7/9/10), `Prompt2.txt` (Module 8), `Prompt3.txt` (Module 2), `Prompt4.txt` (Module 4).
+Original specs live in `Prompt.txt` (Modules 1/6/7/9/10), `Prompt2.txt` (Module 8), `Prompt3.txt` (Module 2), `Prompt4.txt` (Module 4), `Prompt5.txt` (Module 3).
 
 ### Module 1 — Knowledge Base ingestion (`app/services/ingestion.py`, `app/routers/knowledge.py`)
 - Upload → parse → clean → chunk (800/150) → embed (batch 50, retry) → store in `document_chunks`.
@@ -77,7 +94,8 @@ Original specs live in `Prompt.txt` (Modules 1/6/7/9/10), `Prompt2.txt` (Module 
 - Fernet-encrypted token storage (`token_store.py`, `token_encryption.py`).
 - Unified fetch interface `PlatformFetchService` returning `UniversalPost` — this is what Module 4 consumes.
 - Endpoints: status, auth-url, callback, bluesky/telegram connect, validate, refresh, disconnect, logs.
-- **Post side** (`post_reply`) implemented for Bluesky + Mastodon this session.
+- **Post side** (`post_reply` + `post_exists`) implemented for **Bluesky, Mastodon, Reddit, Discord** (`app/services/posting.py`). Endpoints: `POST /drafts/{id}/post`, `/approve-and-post`, `/unapprove`. Per-platform char limits enforced (Bluesky 300, Mastodon 500, Reddit 10000, Discord 2000).
+- Also added: source-liveness check (`GET /conversations/{id}/source-status`), delete-conversation, and bulk `POST /conversations/cleanup-deleted` (remove conversations whose source post was deleted).
 
 ### Module 4 — Discovery + Scoring (`app/services/discovery/`, `app/routers/discovery.py`)
 - APScheduler worker: fetch → dedup → AI relevance score (4 weighted criteria) → filter/rank → submit top N/day to Module 7.
@@ -85,12 +103,19 @@ Original specs live in `Prompt.txt` (Modules 1/6/7/9/10), `Prompt2.txt` (Module 
 - Dashboard `/discovery` (Overview / Posts / Communities / Run History), sidebar status indicator, feed "Discovered today" chip, discovery settings on `/settings`.
 - Seed communities in `supabase/seeds/communities.sql`.
 
+### Module 3 — Community Discovery (`app/services/community/`, `app/routers/community_discovery.py`) — **on the `module-3-community-discovery` branch, not on `main`/production**
+- Adds `search_communities` + `get_person_communities` to all 7 connectors (Reddit/Bluesky/Mastodon/YouTube real; Discord/Telegram/Threads best-effort).
+- Services: `community_scorer` (4-criteria weighted + suggested keywords), `keyword_searcher`, `people_tracker`, `discovery_worker` (7-step), `community_scheduler` (24h job added to the existing scheduler).
+- Router: 15 endpoints (topics, people, discover, runs, suggestions + approve/reject/bulk, monitored). Extends `/discovery/settings` with community fields.
+- Migration `supabase/migrations/004_community_discovery.sql` (**already run on Supabase**) — new tables + `discovery_settings` ALTERs + seed topics.
+- Frontend: `/community` rebuilt into 5 tabs (Suggestions / Active Communities / Topics / People / Discovery History), Community Discovery Settings on `/settings`, sidebar pending badge. Replaces the old localStorage page.
+- **Verified working** end-to-end on OpenAI (found 27 communities → 22 queued suggestions). On local llama3.2 the community scoring times out → 0 suggestions (use OpenAI).
+
 ### Not built (out of scope / future)
-- **Module 3** (auto community discovery/joining).
-- **Module 11** (general settings backend — only discovery settings persist; the Community Manager page and general Settings still use browser localStorage).
+- **Module 11** (general settings backend — only discovery settings persist; general Settings still uses browser localStorage). Note: Module 3 already replaced the Community Manager localStorage page with a real backend.
 - **Module 5** is folded into Module 7 (already built).
 - **Module 12** (SaaS/multi-user/etc).
-- Posting for the other 5 platforms (only Bluesky + Mastodon implemented).
+- Posting for **Threads/YouTube** (Bluesky/Mastodon/Reddit/Discord done).
 
 ---
 
@@ -110,6 +135,13 @@ Original specs live in `Prompt.txt` (Modules 1/6/7/9/10), `Prompt2.txt` (Module 
 12. Ran discovery live. Hit **local-LLM issues** and fixed three robustness problems (see §5): oversized batches saturating Ollama, invalid JSON from llama3.2, incomplete analysis objects.
 13. Proved the **full automated loop** live: discovered a Bluesky post → scored 80% → submitted → analysed → **4 drafts generated**.
 14. **Built the posting side** (Module 9 write-half) for Bluesky + Mastodon with separate Approve / Approve & Post / Post Now / Remove Approval actions.
+15. Made scoring **granular** (analysis relevance = weighted average of 4 sub-dimensions, 2 decimals) after seeing every feed card show a flat 80%.
+16. Added **source-liveness checks** + **bulk cleanup** of conversations whose source post was deleted.
+17. **Deployed to production**: GitHub repo (SSH alias for a second account), Render (backend, env-driven CORS, `LLM_PROVIDER=openai`), Vercel (frontend). Verified end-to-end + CORS.
+18. Added Bluesky/Mastodon **character-limit** enforcement + platform-aware short-draft generation (Bluesky 300 was rejecting drafts).
+19. Fixed the dead `/knowledge/documents/stats` 500 (route ordering) and made `.doc` cleanly reject on hosts without a converter. Deferred true `.doc` support to a Docker/LibreOffice step at the end.
+20. Added **Reddit posting** (blocked live by Reddit's app-approval policy — request form submitted) and **Discord posting** (bot created, connected).
+21. **Built Module 3** (`Prompt5.txt`, Community Discovery) — verified live on OpenAI — and pushed it to the **`module-3-community-discovery` branch** (deliberately not merged to `main`, so it doesn't deploy; others pull the branch to run locally).
 
 ---
 

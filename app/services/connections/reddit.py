@@ -51,7 +51,7 @@ class RedditConnector(BaseConnector):
         )
 
     def get_auth_url(self, state: str) -> str:
-        return self._client().auth.url(SCOPES, state, "permanent")
+        return self._client().auth.url(scopes=SCOPES, state=state, duration="permanent")
 
     async def exchange_code(self, code: str, state: str) -> ConnectionResult:
         def _work() -> ConnectionResult:

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
+  Bookmark,
   Database,
   Home,
   MessageSquare,
@@ -16,13 +17,21 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { communityApi, conversationsApi, discoveryApi, knowledgeApi } from "@/lib/api";
+import {
+  DRAFTS_CHANGED_EVENT,
+  communityApi,
+  conversationsApi,
+  discoveryApi,
+  draftsApi,
+  knowledgeApi,
+} from "@/lib/api";
 import type { DiscoveryStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/feed", label: "Today's Feed", icon: Home, badge: true },
   { href: "/conversations", label: "Conversations", icon: MessageSquare },
+  { href: "/saved", label: "Saved for Later", icon: Bookmark },
   { href: "/discovery", label: "Discovery", icon: Radar },
   { href: "/submit", label: "Submit", icon: PlusCircle },
   { href: "/knowledge", label: "Knowledge Base", icon: Database },
@@ -52,43 +61,61 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryStatus | null>(null);
   const [suggestionsCount, setSuggestionsCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+
+  // Counters that change from user actions elsewhere in the app. `alive` is a
+  // ref so the same callback can be reused by the interval, the route change
+  // and the drafts-changed listener without being torn down between them.
+  const alive = useRef(true);
+  const refresh = useCallback(async () => {
+    try {
+      const [convs] = await Promise.all([
+        conversationsApi.getConversations({ status: "analysed", page_size: 100 }),
+        knowledgeApi.getDocuments(),
+      ]);
+      if (!alive.current) return;
+      setApiOk(true);
+      setAwaitingCount(convs.conversations.filter((c) => c.draft_count > 0).length);
+    } catch {
+      if (alive.current) setApiOk(false);
+    }
+    try {
+      const d = await discoveryApi.getStatus();
+      if (alive.current) setDiscovery(d);
+    } catch {
+      if (alive.current) setDiscovery(null);
+    }
+    try {
+      const s = await communityApi.getSuggestions({ status: "pending" });
+      if (alive.current) setSuggestionsCount(s.counts.pending);
+    } catch {
+      /* non-critical */
+    }
+    try {
+      const saved = await draftsApi.getDrafts({ status: "saved", page_size: 1 });
+      if (alive.current) setSavedCount(saved.total);
+    } catch {
+      /* non-critical */
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const check = async () => {
-      try {
-        const [convs] = await Promise.all([
-          conversationsApi.getConversations({ status: "analysed", page_size: 100 }),
-          knowledgeApi.getDocuments(),
-        ]);
-        if (!mounted) return;
-        setApiOk(true);
-        setAwaitingCount(
-          convs.conversations.filter((c) => c.draft_count > 0).length
-        );
-      } catch {
-        if (mounted) setApiOk(false);
-      }
-      try {
-        const d = await discoveryApi.getStatus();
-        if (mounted) setDiscovery(d);
-      } catch {
-        if (mounted) setDiscovery(null);
-      }
-      try {
-        const s = await communityApi.getSuggestions({ status: "pending" });
-        if (mounted) setSuggestionsCount(s.counts.pending);
-      } catch {
-        /* non-critical */
-      }
-    };
-    check();
-    const interval = setInterval(check, 60000);
+    alive.current = true;
+    const interval = setInterval(refresh, 60000);
+    // Approving/saving/rejecting a draft anywhere fires this, so the badges
+    // update on the action rather than up to 60s later.
+    window.addEventListener(DRAFTS_CHANGED_EVENT, refresh);
     return () => {
-      mounted = false;
+      alive.current = false;
       clearInterval(interval);
+      window.removeEventListener(DRAFTS_CHANGED_EVENT, refresh);
     };
-  }, []);
+  }, [refresh]);
+
+  // Also re-check on navigation, which covers changes made in another tab.
+  useEffect(() => {
+    refresh();
+  }, [pathname, refresh]);
 
   const content = (
     <div className="flex h-full flex-col">
@@ -139,6 +166,11 @@ export default function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
               {item.href === "/community" && suggestionsCount > 0 && (
                 <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs text-text-primary md:hidden lg:inline">
                   {suggestionsCount}
+                </span>
+              )}
+              {item.href === "/saved" && savedCount > 0 && (
+                <span className="ml-auto rounded-full bg-warning/20 px-2 py-0.5 text-xs text-warning md:hidden lg:inline">
+                  {savedCount}
                 </span>
               )}
             </Link>

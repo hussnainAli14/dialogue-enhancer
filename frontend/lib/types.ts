@@ -107,6 +107,35 @@ export interface ResponseDraft {
   created_at: string;
 }
 
+export interface CleanupScan {
+  scan_id: string;
+  status: "running" | "completed" | "failed";
+  checked: number;
+  total: number;
+  deleted: { id: string; platform: string; post_url: string | null }[];
+  deleted_count: number;
+  error: string | null;
+  applied?: boolean;
+}
+
+export interface DraftWithConversation extends ResponseDraft {
+  conversation: {
+    id: string;
+    platform: string;
+    post_url: string;
+    post_author: string;
+    original_post: string;
+    submitted_at: string;
+  } | null;
+}
+
+export interface DraftListResponse {
+  page: number;
+  page_size: number;
+  total: number;
+  drafts: DraftWithConversation[];
+}
+
 export interface ConversationDetail extends Conversation {
   analysis: ConversationAnalysis | null;
   drafts: ResponseDraft[];
@@ -303,6 +332,13 @@ export interface CommunitySuggestion {
   status: "pending" | "approved" | "rejected" | "already_monitoring";
 }
 
+export interface RunCommunity {
+  platform: string;
+  name: string;
+  relevance_score: number | null;
+  status: string;
+}
+
 export interface CommunityDiscoveryRun {
   id: string;
   trigger_type: string;
@@ -316,4 +352,5 @@ export interface CommunityDiscoveryRun {
   started_at: string;
   completed_at: string | null;
   duration_seconds: number | null;
+  communities?: RunCommunity[];
 }

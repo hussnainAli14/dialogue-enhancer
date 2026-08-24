@@ -28,3 +28,34 @@ def log_task(task_type: str, reference_id: str | None, status: str, message: str
         ).execute()
     except Exception:
         pass
+
+
+def detach_feedback_log(conversation_ids: list[str]) -> None:
+    """Clear feedback_log references to the given conversations and their drafts.
+
+    feedback_log.conversation_id / draft_id are the only FKs to those tables
+    without an ON DELETE rule, so any conversation with decision history cannot
+    be deleted while they point at it. Both columns are nullable, so the
+    references are nulled rather than the rows deleted — the audit history of
+    what was approved/rejected is worth keeping after the conversation is gone.
+    """
+    if not conversation_ids:
+        return
+    supabase = get_supabase()
+    draft_ids = [
+        d["id"]
+        for d in (
+            supabase.table("response_drafts")
+            .select("id")
+            .in_("conversation_id", conversation_ids)
+            .execute()
+        ).data
+        or []
+    ]
+    supabase.table("feedback_log").update({"conversation_id": None}).in_(
+        "conversation_id", conversation_ids
+    ).execute()
+    if draft_ids:
+        supabase.table("feedback_log").update({"draft_id": None}).in_(
+            "draft_id", draft_ids
+        ).execute()

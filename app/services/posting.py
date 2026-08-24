@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
-from app.database import get_supabase, log_task
+from app.database import detach_feedback_log, get_supabase, log_task
 from app.services import token_store
 from app.services.connections.factory import get_connector
 
@@ -75,10 +76,82 @@ async def check_source_alive(conversation_id: str) -> dict:
     }
 
 
-async def scan_deleted(dry_run: bool = True) -> dict:
-    """Check every Bluesky/Mastodon conversation to see if its source post is
+# ── Background scan registry ──────────────────────────
+# A scan makes one live API call per conversation, so it runs for a minute or
+# more. It is kicked off as a background task and polled by scan_id instead of
+# blocking the request. In-memory on purpose: a scan result is throwaway state
+# and does not need to survive a restart.
+_SCANS: dict[str, dict] = {}
+_SCAN_RETENTION = 20  # keep only the most recent scans
+
+
+def start_scan() -> str:
+    """Kick off a dry-run scan in the background and return its scan_id."""
+    scan_id = str(uuid.uuid4())
+    _SCANS[scan_id] = {
+        "scan_id": scan_id,
+        "status": "running",
+        "checked": 0,
+        "total": 0,
+        "deleted": [],
+        "deleted_count": 0,
+        "error": None,
+    }
+    # Drop the oldest entries so a long-lived process cannot grow unbounded.
+    for stale in list(_SCANS)[:-_SCAN_RETENTION]:
+        _SCANS.pop(stale, None)
+
+    asyncio.create_task(_run_scan(scan_id))
+    return scan_id
+
+
+def get_scan(scan_id: str) -> dict | None:
+    return _SCANS.get(scan_id)
+
+
+async def _run_scan(scan_id: str) -> None:
+    state = _SCANS[scan_id]
+    try:
+        result = await scan_deleted(dry_run=True, state=state)
+        state.update(result)
+        state["status"] = "completed"
+    except Exception as exc:  # never leave a scan stuck on "running"
+        state["status"] = "failed"
+        state["error"] = str(exc)
+
+
+def apply_scan(scan_id: str) -> dict:
+    """Delete exactly the conversations a completed scan flagged.
+
+    Re-scanning here would repeat every platform call for a second time, so the
+    confirm step reuses the ids the scan already found.
+    """
+    state = _SCANS.get(scan_id)
+    if not state:
+        raise ValueError("Scan not found or expired. Run the scan again.")
+    if state["status"] != "completed":
+        raise ValueError(f"Scan is not finished (status: {state['status']}).")
+
+    ids = [d["id"] for d in state["deleted"]]
+    if not ids:
+        return {"removed": False, "deleted_count": 0}
+
+    supabase = get_supabase()
+    detach_feedback_log(ids)
+    supabase.table("discovered_posts").delete().in_("conversation_id", ids).execute()
+    supabase.table("conversations").delete().in_("id", ids).execute()
+    log_task("analysis", None, "completed", f"Bulk cleanup removed {len(ids)} deleted posts.")
+
+    state["applied"] = True
+    return {"removed": True, "deleted_count": len(ids)}
+
+
+async def scan_deleted(dry_run: bool = True, state: dict | None = None) -> dict:
+    """Check every connected-platform conversation to see if its source post is
     still live. With dry_run=True, only report the deleted ones. With
     dry_run=False, also remove them (conversation + discovered_posts row).
+
+    `state`, when given, is updated with live progress for polling.
 
     Only platforms that are currently connected are scanned; conversations whose
     source could not be determined are left alone (never deleted on uncertainty).
@@ -101,7 +174,13 @@ async def scan_deleted(dry_run: bool = True) -> dict:
         .execute()
     ).data or []
 
-    sem = asyncio.Semaphore(5)  # be gentle with platform rate limits
+    if state is not None:
+        state["total"] = len(convs)
+
+    # Still well inside platform rate limits (Mastodon allows 300 req / 5 min),
+    # but ~2x faster than the old limit of 5 on a few hundred conversations.
+    sem = asyncio.Semaphore(10)
+    PER_CHECK_TIMEOUT = 10  # a hung platform must not stall the whole scan
 
     async def _check(conv: dict):
         async with sem:
@@ -111,10 +190,16 @@ async def scan_deleted(dry_run: bool = True) -> dict:
                 target = _resolve_target(supabase, conv["id"], conv)
                 if not target:
                     return (conv, None)  # unknown — leave alone
-                exists = await connector.post_exists(connection, target=target)
+                exists = await asyncio.wait_for(
+                    connector.post_exists(connection, target=target),
+                    timeout=PER_CHECK_TIMEOUT,
+                )
                 return (conv, exists)
             except Exception:
-                return (conv, None)  # error — treat as unknown, never delete
+                return (conv, None)  # error/timeout — unknown, never delete
+            finally:
+                if state is not None:
+                    state["checked"] += 1
 
     results = await asyncio.gather(*[_check(c) for c in convs])
 

@@ -24,6 +24,27 @@ const PLATFORMS7 = ["reddit", "bluesky", "mastodon", "discord", "telegram", "thr
 const TABS = ["Suggestions", "Active Communities", "Topics", "People", "Discovery History"] as const;
 type Tab = (typeof TABS)[number];
 
+// Mirrors the weights in app/services/community/community_scorer.py — keep in sync.
+const SCORE_WEIGHTS = { topic: "40%", audience: "30%", quality: "20%", opportunity: "10%" };
+const MIN_COMMUNITY_SCORE = 0.6;
+
+// Shared button/chip styling so the three card tabs stay consistent.
+const BTN_JOIN = "bg-success hover:bg-success/80 text-text-primary";
+const BTN_DESTRUCTIVE = "border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25";
+const BTN_ON = "border border-success/40 bg-success/15 text-success hover:bg-success/25";
+const BTN_OFF = "border border-border-bright bg-surface-raised text-text-muted hover:text-text-secondary";
+const CHIP =
+  "rounded-md border border-accent-light/40 bg-accent/25 px-2.5 py-1 text-xs font-medium tracking-wide text-accent-light";
+
+function StatusToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <Button size="sm" className={on ? BTN_ON : BTN_OFF} onClick={onClick}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", on ? "bg-success" : "bg-text-muted")} />
+      {on ? "Active" : "Paused"}
+    </Button>
+  );
+}
+
 function scoreColor(s: number | null): string {
   if (s === null) return "text-text-muted";
   if (s >= 0.75) return "text-success";
@@ -109,10 +130,10 @@ function SuggestionsTab() {
     setBusy(s.id);
     try {
       await communityApi.approveSuggestion(s.id, keywordEdits[s.id]);
-      showToast("success", `Now monitoring ${s.community_name}.`);
+      showToast("success", `Joined ${s.community_name} — now monitoring it.`);
       load();
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Approve failed");
+      showToast("error", err instanceof Error ? err.message : "Join failed");
     } finally {
       setBusy(null);
     }
@@ -122,9 +143,10 @@ function SuggestionsTab() {
     setBusy(s.id);
     try {
       await communityApi.rejectSuggestion(s.id);
+      showToast("info", `Ignored ${s.community_name}.`);
       load();
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Reject failed");
+      showToast("error", err instanceof Error ? err.message : "Ignore failed");
     } finally {
       setBusy(null);
     }
@@ -133,20 +155,20 @@ function SuggestionsTab() {
   const bulkApprove = async () => {
     try {
       const res = await communityApi.approveAll(approveThreshold);
-      showToast("success", `Approved ${res.approved} communities.`);
+      showToast("success", `Joined ${res.approved} communities.`);
       load();
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Bulk approve failed");
+      showToast("error", err instanceof Error ? err.message : "Bulk join failed");
     }
   };
 
   const bulkReject = async () => {
     try {
       const res = await communityApi.rejectAll(rejectThreshold);
-      showToast("info", `Rejected ${res.rejected} low-scoring suggestions.`);
+      showToast("info", `Ignored ${res.rejected} low-scoring suggestions.`);
       load();
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Bulk reject failed");
+      showToast("error", err instanceof Error ? err.message : "Bulk ignore failed");
     }
   };
 
@@ -158,8 +180,8 @@ function SuggestionsTab() {
       <div className="flex flex-wrap items-center gap-3">
         {[
           { label: "Awaiting Review", value: counts.pending },
-          { label: "Approved", value: counts.approved },
-          { label: "Rejected", value: counts.rejected },
+          { label: "Joined", value: counts.approved },
+          { label: "Ignored", value: counts.rejected },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border border-border bg-surface px-4 py-2 text-center">
             <span className="text-lg font-semibold text-text-primary">{c.value}</span>
@@ -174,18 +196,31 @@ function SuggestionsTab() {
       {suggestions.length > 0 && (
         <div className="flex flex-wrap items-center gap-6 rounded-xl border border-border bg-surface p-4 text-sm">
           <div className="flex items-center gap-2">
-            <span className="text-text-secondary">Approve all above {(approveThreshold * 100).toFixed(0)}%</span>
+            <span className="text-text-secondary">Join all above {(approveThreshold * 100).toFixed(0)}%</span>
             <input type="range" min={0} max={1} step={0.05} value={approveThreshold}
               onChange={(e) => setApproveThreshold(Number(e.target.value))} className="accent-accent" />
-            <Button size="sm" variant="secondary" onClick={bulkApprove}>Approve</Button>
+            <Button size="sm" className={BTN_JOIN} onClick={bulkApprove}>Join</Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-text-secondary">Reject all below {(rejectThreshold * 100).toFixed(0)}%</span>
+            <span className="text-text-secondary">Ignore all below {(rejectThreshold * 100).toFixed(0)}%</span>
             <input type="range" min={0} max={1} step={0.05} value={rejectThreshold}
               onChange={(e) => setRejectThreshold(Number(e.target.value))} className="accent-accent" />
-            <Button size="sm" variant="ghost" className="text-danger" onClick={bulkReject}>Reject</Button>
+            <Button size="sm" className={BTN_DESTRUCTIVE} onClick={bulkReject}>Ignore</Button>
           </div>
         </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <p className="rounded-xl border-l-4 border-warning bg-warning/20 px-4 py-3 text-xs leading-relaxed text-amber-100/90">
+          <span className="mr-1.5 text-base text-warning">💡</span>
+          <span className="font-semibold text-warning">About the percentage:</span>{" "}
+          it is a <span className="font-medium text-amber-50">relevance score</span> — how well the AI thinks
+          each community fits your Topics and the people you follow. It is a weighted average of four
+          criteria: topic relevance ({SCORE_WEIGHTS.topic}), audience fit ({SCORE_WEIGHTS.audience}),
+          discussion quality ({SCORE_WEIGHTS.quality}) and contribution opportunity ({SCORE_WEIGHTS.opportunity}).
+          Anything scoring under {(MIN_COMMUNITY_SCORE * 100).toFixed(0)}% is filtered out before it
+          reaches this list. Hover any score to see the breakdown.
+        </p>
       )}
 
       {loading ? (
@@ -201,18 +236,20 @@ function SuggestionsTab() {
           {suggestions.map((s) => (
             <div key={s.id} className="rounded-xl border border-border bg-surface p-4">
               <div className="flex items-start gap-3">
-                <span className={cn("rounded px-2 py-0.5 text-xs", PLATFORM_BADGE_CLASSES[s.platform])}>
+                <span className={cn("inline-flex h-5 shrink-0 items-center rounded px-2 text-xs", PLATFORM_BADGE_CLASSES[s.platform])}>
                   {PLATFORM_LABELS[s.platform] ?? s.platform}
                 </span>
                 <div className="min-w-0 flex-1">
-                  {s.community_url ? (
-                    <a href={s.community_url} target="_blank" rel="noreferrer"
-                      className="text-sm font-medium text-accent-light hover:underline">
-                      {s.community_name}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-medium text-text-primary">{s.community_name}</span>
-                  )}
+                  <div className="flex h-5 items-center">
+                    {s.community_url ? (
+                      <a href={s.community_url} target="_blank" rel="noreferrer"
+                        className="truncate text-sm font-medium leading-none text-accent-light hover:underline">
+                        {s.community_name}
+                      </a>
+                    ) : (
+                      <span className="truncate text-sm font-medium leading-none text-text-primary">{s.community_name}</span>
+                    )}
+                  </div>
                   {s.description && (
                     <p className="text-xs text-text-secondary">{s.description.slice(0, 100)}{s.description.length > 100 ? "…" : ""}</p>
                   )}
@@ -235,13 +272,30 @@ function SuggestionsTab() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <span className={cn("text-xl font-semibold", scoreColor(s.relevance_score))}>
-                    {s.relevance_score != null ? `${(s.relevance_score * 100).toFixed(0)}%` : "—"}
-                  </span>
+                  <div className="group relative">
+                    <span
+                      className={cn("cursor-help text-xl font-semibold", scoreColor(s.relevance_score))}
+                      tabIndex={0}
+                      aria-describedby={`score-help-${s.id}`}
+                    >
+                      {s.relevance_score != null ? `${(s.relevance_score * 100).toFixed(0)}%` : "—"}
+                    </span>
+                    <span
+                      id={`score-help-${s.id}`}
+                      role="tooltip"
+                      className="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-64 rounded-lg border border-border bg-surface-raised p-3 text-xs leading-relaxed text-text-secondary shadow-lg group-hover:block group-focus-within:block"
+                    >
+                      <span className="block font-medium text-text-primary">Relevance score</span>
+                      How well this community matches your topics, scored by the AI. Weighted average of
+                      topic relevance ({SCORE_WEIGHTS.topic}), audience fit ({SCORE_WEIGHTS.audience}),
+                      discussion quality ({SCORE_WEIGHTS.quality}) and contribution opportunity
+                      ({SCORE_WEIGHTS.opportunity}). Higher means a better place to contribute.
+                    </span>
+                  </div>
                   <div className="flex gap-2">
-                    <Button size="sm" className="bg-success hover:bg-success/80" loading={busy === s.id}
-                      onClick={() => approve(s)}>Approve</Button>
-                    <Button size="sm" variant="ghost" className="text-danger" onClick={() => reject(s)}>Reject</Button>
+                    <Button size="sm" className={BTN_JOIN} loading={busy === s.id}
+                      onClick={() => approve(s)}>Join</Button>
+                    <Button size="sm" className={BTN_DESTRUCTIVE} onClick={() => reject(s)}>Ignore</Button>
                   </div>
                 </div>
               </div>
@@ -304,7 +358,7 @@ function ActiveTab() {
     <div className="space-y-4">
       <div className="flex justify-end"><Button onClick={() => setAddOpen(true)}>Add Manually</Button></div>
       {loading ? <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>
-        : platforms.length === 0 ? <EmptyState icon={<span className="text-4xl">📡</span>} title="No active communities" description="Approve suggestions or add one manually." />
+        : platforms.length === 0 ? <EmptyState icon={<span className="text-4xl">📡</span>} title="No active communities" description="Join suggestions or add one manually." />
         : platforms.map((platform) => (
           <div key={platform} className="space-y-2">
             <h3 className="text-sm font-medium text-text-primary">
@@ -325,15 +379,15 @@ function ActiveTab() {
                   <p className="text-xs text-text-muted">{c.community_id}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {c.keywords.map((k) => (
-                      <span key={k} className="rounded bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">{k}</span>
+                      <span key={k} className={CHIP}>{k}</span>
                     ))}
                   </div>
                   <div className="mt-3 flex items-center gap-2 text-xs text-text-muted">
                     <span>{c.fetch_count} fetches</span>
                     {c.last_fetched_at && <span>· {new Date(c.last_fetched_at).toLocaleDateString()}</span>}
                     <div className="ml-auto flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => toggle(c)}>{c.is_active ? "Active" : "Paused"}</Button>
-                      <Button size="sm" variant="ghost" className="text-danger" onClick={() => setRemoveTarget(c.id)}>Remove</Button>
+                      <StatusToggle on={c.is_active} onClick={() => toggle(c)} />
+                      <Button size="sm" className={BTN_DESTRUCTIVE} onClick={() => setRemoveTarget(c.id)}>Remove</Button>
                     </div>
                   </div>
                 </div>
@@ -398,13 +452,13 @@ function TopicsTab() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-text-primary">{t.topic}</span>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => toggle(t)}>{t.is_active ? "Active" : "Paused"}</Button>
-                  <Button size="sm" variant="ghost" className="text-danger" onClick={() => del(t.id)}>Delete</Button>
+                  <StatusToggle on={t.is_active} onClick={() => toggle(t)} />
+                  <Button size="sm" className={BTN_DESTRUCTIVE} onClick={() => del(t.id)}>Delete</Button>
                 </div>
               </div>
               {t.description && <p className="text-xs text-text-secondary">{t.description}</p>}
               <div className="mt-2 flex flex-wrap gap-1">
-                {t.keywords.map((k) => <span key={k} className="rounded bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">{k}</span>)}
+                {t.keywords.map((k) => <span key={k} className={CHIP}>{k}</span>)}
               </div>
             </div>
           ))}
@@ -467,8 +521,8 @@ function PeopleTab() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-text-primary">{p.name}</span>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => toggle(p)}>{p.is_active ? "Active" : "Paused"}</Button>
-                  <Button size="sm" variant="ghost" className="text-danger" onClick={() => del(p.id)}>Delete</Button>
+                  <StatusToggle on={p.is_active} onClick={() => toggle(p)} />
+                  <Button size="sm" className={BTN_DESTRUCTIVE} onClick={() => del(p.id)}>Delete</Button>
                 </div>
               </div>
               {p.description && <p className="text-xs text-text-secondary">{p.description}</p>}
@@ -542,9 +596,34 @@ function HistoryTab() {
               </tr>
               {expanded === r.id && (
                 <tr className="border-b border-border/50 bg-background/40">
-                  <td colSpan={6} className="p-3 text-xs text-text-secondary">
-                    Modes: {(r.discovery_modes || []).join(", ") || "—"} · Platforms: {(r.platforms_searched || []).join(", ") || "—"} · Already known: {r.communities_already_known}
-                    {r.error_message && <span className={r.status === "failed" ? "text-danger" : "text-text-secondary"}> · {r.status === "failed" ? "Error" : "Outcome"}: {r.error_message}</span>}
+                  <td colSpan={6} className="space-y-2 p-3 text-xs text-text-secondary">
+                    <div>
+                      Modes: {(r.discovery_modes || []).join(", ") || "—"} · Platforms: {(r.platforms_searched || []).join(", ") || "—"} · Already known: {r.communities_already_known}
+                      {r.error_message && <span className={r.status === "failed" ? "text-danger" : "text-text-secondary"}> · {r.status === "failed" ? "Error" : "Outcome"}: {r.error_message}</span>}
+                    </div>
+                    {(r.communities || []).length > 0 ? (
+                      <div>
+                        <span className="text-text-muted">Communities found ({r.communities!.length}):</span>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {r.communities!.map((c, i) => (
+                            <span
+                              key={`${c.platform}-${c.name}-${i}`}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2 py-0.5"
+                              title={`${PLATFORM_LABELS[c.platform] ?? c.platform} · ${c.status}`}
+                            >
+                              <span className="text-text-primary">{c.name}</span>
+                              {c.relevance_score != null && (
+                                <span className={scoreColor(c.relevance_score)}>
+                                  {(c.relevance_score * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-text-muted">No community names recorded for this run.</div>
+                    )}
                   </td>
                 </tr>
               )}

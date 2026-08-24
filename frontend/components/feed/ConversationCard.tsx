@@ -60,8 +60,8 @@ export default function ConversationCard({
 
         <div className="ml-auto flex gap-2">
           <Button
-            variant="ghost"
             size="sm"
+            className="border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25"
             iconLeft={<XCircle className="h-4 w-4" />}
             onClick={() => onDismiss(conversation.id)}
             loading={dismissing}

@@ -142,6 +142,40 @@ async def discover(body: dict | None = None):
         return fail(f"Failed to trigger community discovery: {exc}", 500)
 
 
+def _attach_communities(runs: list[dict]) -> list[dict]:
+    """Attach the communities each run turned up, so History rows can name them.
+
+    The run row only stores counts; the names live in community_suggestions,
+    linked back by discovery_run_id.
+    """
+    run_ids = [r["id"] for r in runs if r.get("id")]
+    if not run_ids:
+        return runs
+
+    rows = (
+        _sb().table("community_suggestions")
+        .select("discovery_run_id, platform, community_name, community_id, relevance_score, status")
+        .in_("discovery_run_id", run_ids)
+        .order("relevance_score", desc=True, nullsfirst=False)
+        .execute()
+    ).data or []
+
+    by_run: dict[str, list[dict]] = {}
+    for row in rows:
+        by_run.setdefault(row["discovery_run_id"], []).append(
+            {
+                "platform": row["platform"],
+                "name": row.get("community_name") or row.get("community_id"),
+                "relevance_score": row.get("relevance_score"),
+                "status": row.get("status"),
+            }
+        )
+
+    for run in runs:
+        run["communities"] = by_run.get(run["id"], [])
+    return runs
+
+
 @router.get("/discover/runs")
 async def list_runs(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
     try:
@@ -150,7 +184,8 @@ async def list_runs(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1,
             _sb().table("community_discovery_runs").select("*", count="exact")
             .order("started_at", desc=True).range(start, start + page_size - 1).execute()
         )
-        return ok({"page": page, "page_size": page_size, "total": res.count or 0, "runs": res.data or []})
+        runs = _attach_communities(res.data or [])
+        return ok({"page": page, "page_size": page_size, "total": res.count or 0, "runs": runs})
     except Exception as exc:
         return fail(f"Failed to load runs: {exc}", 500)
 
@@ -161,7 +196,7 @@ async def get_run(run_id: str):
         rows = _sb().table("community_discovery_runs").select("*").eq("id", run_id).limit(1).execute().data
         if not rows:
             return fail("Run not found", 404)
-        return ok({"run": rows[0]})
+        return ok({"run": _attach_communities(rows)[0]})
     except Exception as exc:
         return fail(f"Failed to load run: {exc}", 500)
 

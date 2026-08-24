@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 import type { ResponseDraft } from "@/lib/types";
-import DraftCard, { DraftActions } from "./DraftCard";
+import DraftCard, { DraftActions, DraftActionName } from "./DraftCard";
 
 export default function DraftGrid({
   drafts,
   actions,
   canPost = false,
+  busy = null,
 }: {
   drafts: ResponseDraft[];
   actions: DraftActions;
   canPost?: boolean;
+  busy?: { id: string; action: DraftActionName } | null;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -25,6 +27,7 @@ export default function DraftGrid({
           canPost={canPost}
           editOpen={editingId === draft.id}
           onOpenEdit={setEditingId}
+          busyAction={busy?.id === draft.id ? busy.action : null}
         />
       ))}
     </div>

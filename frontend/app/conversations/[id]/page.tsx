@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/useToast";
 import ConversationThread from "@/components/conversation/ConversationThread";
 import AnalysisPanel from "@/components/conversation/AnalysisPanel";
 import DraftGrid from "@/components/conversation/DraftGrid";
+import type { DraftActionName } from "@/components/conversation/DraftCard";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 import ErrorState from "@/components/shared/ErrorState";
 import Button from "@/components/shared/Button";
@@ -24,23 +25,29 @@ export default function ConversationDetailPage() {
     params.id
   );
 
+  // Which draft action is in flight, so the card can disable its siblings and
+  // put a loader on the button that was actually clicked. The draft keeps its
+  // real status until the request lands — flipping it optimistically used to
+  // unmount the whole button row mid-request.
+  const [busy, setBusy] = useState<{ id: string; action: DraftActionName } | null>(null);
+
   const runAction = useCallback(
     async (
       draft: ResponseDraft | undefined,
-      optimisticPatch: Partial<ResponseDraft>,
+      action: DraftActionName,
       apiCall: () => Promise<ResponseDraft>,
       successMsg: string
     ) => {
       if (!draft) return;
-      const previous = { ...draft };
-      updateDraftLocal(draft.id, optimisticPatch);
+      setBusy({ id: draft.id, action });
       try {
         const updated = await apiCall();
         updateDraftLocal(draft.id, updated);
         showToast("success", successMsg);
       } catch (err) {
-        updateDraftLocal(draft.id, previous);
         showToast("error", err instanceof Error ? err.message : "Action failed");
+      } finally {
+        setBusy(null);
       }
     },
     [updateDraftLocal, showToast]
@@ -52,49 +59,49 @@ export default function ConversationDetailPage() {
     onApprove: (id: string) =>
       runAction(
         findDraft(id),
-        { status: "approved" },
+        "approve",
         () => draftsApi.approveDraft(id),
         "Draft approved."
       ),
     onEditAndApprove: (id: string, content: string) =>
       runAction(
         findDraft(id),
-        { status: "edited", edited_content: content },
+        "edit",
         () => draftsApi.editAndApproveDraft(id, content),
         "Draft edited and approved."
       ),
     onReject: (id: string, reason?: string) =>
       runAction(
         findDraft(id),
-        { status: "rejected", rejection_reason: reason ?? null },
+        "reject",
         () => draftsApi.rejectDraft(id, reason),
         "Draft rejected."
       ),
     onSave: (id: string) =>
       runAction(
         findDraft(id),
-        { status: "saved" },
+        "save",
         () => draftsApi.saveDraft(id),
         "Draft saved for later."
       ),
     onApproveAndPost: (id: string) =>
       runAction(
         findDraft(id),
-        { status: "posted" },
+        "approveAndPost",
         () => draftsApi.approveAndPostDraft(id),
         "Draft approved and posted to the platform."
       ),
     onPost: (id: string) =>
       runAction(
         findDraft(id),
-        { status: "posted" },
+        "post",
         () => draftsApi.postDraft(id),
         "Reply posted to the platform."
       ),
     onUnapprove: (id: string) =>
       runAction(
         findDraft(id),
-        { status: "pending" },
+        "unapprove",
         () => draftsApi.unapproveDraft(id),
         "Approval removed — draft is pending again."
       ),
@@ -248,7 +255,7 @@ export default function ConversationDetailPage() {
         {/* Right column — drafts */}
         <div className="lg:col-span-3">
           {data.drafts.length > 0 ? (
-            <DraftGrid drafts={data.drafts} actions={actions} canPost={canPost} />
+            <DraftGrid drafts={data.drafts} actions={actions} canPost={canPost} busy={busy} />
           ) : (
             <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-text-secondary">
               {data.analysis_status === "skipped" ? (

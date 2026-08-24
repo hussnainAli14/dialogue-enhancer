@@ -64,15 +64,15 @@ export default function CommunityDiscoverySettingsSection() {
             <button
               onClick={() => set("community_discovery_enabled", !settings.community_discovery_enabled)}
               className={
-                "relative h-6 w-11 rounded-full transition-colors " +
+                "relative h-6 w-11 shrink-0 rounded-full p-0 transition-colors " +
                 (settings.community_discovery_enabled ? "bg-accent" : "bg-surface-raised")
               }
               aria-label="Toggle community discovery"
             >
               <span
                 className={
-                  "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform " +
-                  (settings.community_discovery_enabled ? "translate-x-5" : "translate-x-0.5")
+                  "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform " +
+                  (settings.community_discovery_enabled ? "translate-x-5" : "translate-x-0")
                 }
               />
             </button>

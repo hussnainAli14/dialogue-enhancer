@@ -29,6 +29,7 @@ export default function Select({
         className={cn(
           "rounded-lg bg-surface border border-border px-3 py-2 text-sm text-text-primary",
           "focus:outline-none focus:border-border-bright transition-colors appearance-none",
+          "disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}

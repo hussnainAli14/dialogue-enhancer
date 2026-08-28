@@ -124,6 +124,80 @@ class YouTubeConnector(BaseConnector):
         except Exception:
             return False
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("youtube")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _work():
+            yt = self._youtube(self._credentials(conn))
+            out: list[DiscoveredCommunity] = []
+            seen: set[str] = set()
+            for kw in keywords:
+                res = yt.search().list(
+                    part="snippet", q=kw, type="channel", maxResults=min(limit, 10)
+                ).execute()
+                for item in res.get("items", []):
+                    cid = item["id"].get("channelId")
+                    if not cid or cid in seen:
+                        continue
+                    seen.add(cid)
+                    sn = item["snippet"]
+                    out.append(
+                        DiscoveredCommunity(
+                            platform="youtube",
+                            community_id=cid,
+                            community_name=sn.get("channelTitle", "YouTube channel"),
+                            community_url=f"https://youtube.com/channel/{cid}",
+                            description=sn.get("description"),
+                            activity_level="unknown",
+                            discovered_via_keywords=[kw],
+                        )
+                    )
+            return out
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("youtube")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _work():
+            yt = self._youtube(self._credentials(conn))
+            res = yt.search().list(
+                part="snippet", q=handle, type="channel", maxResults=1
+            ).execute()
+            items = res.get("items", [])
+            if not items:
+                return []
+            cid = items[0]["id"].get("channelId")
+            sn = items[0]["snippet"]
+            return [
+                DiscoveredCommunity(
+                    platform="youtube",
+                    community_id=cid,
+                    community_name=sn.get("channelTitle", handle),
+                    community_url=f"https://youtube.com/channel/{cid}",
+                    discovery_method="people_based",
+                )
+            ]
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

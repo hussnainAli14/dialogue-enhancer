@@ -76,6 +76,13 @@ class Settings:
     MAX_CONVERSATIONS_PER_DAY: int = int(os.getenv("MAX_CONVERSATIONS_PER_DAY", "5"))
     MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.65"))
 
+    # ── Module 3 — community discovery (fallbacks; DB settings win) ──
+    COMMUNITY_DISCOVERY_ENABLED: bool = os.getenv("COMMUNITY_DISCOVERY_ENABLED", "true").lower() == "true"
+    COMMUNITY_DISCOVERY_SCHEDULE_HOURS: int = int(os.getenv("COMMUNITY_DISCOVERY_SCHEDULE_HOURS", "24"))
+    MAX_COMMUNITIES_PER_PLATFORM: int = int(os.getenv("MAX_COMMUNITIES_PER_PLATFORM", "20"))
+    MIN_COMMUNITY_RELEVANCE_SCORE: float = float(os.getenv("MIN_COMMUNITY_RELEVANCE_SCORE", "0.60"))
+    MAX_SUGGESTIONS_PER_RUN: int = int(os.getenv("MAX_SUGGESTIONS_PER_RUN", "50"))
+
 
 @lru_cache
 def get_settings() -> Settings:

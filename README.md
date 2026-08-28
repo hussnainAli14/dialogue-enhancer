@@ -314,3 +314,77 @@ The sidebar shows **Scheduler Stopped** (red) if the scheduler isn't running. It
 | GET/POST | `/discovery/communities` | List / add monitored communities |
 | PATCH/DELETE | `/discovery/communities/{id}` | Update / remove a community |
 | GET/POST | `/discovery/settings` | Read / update discovery settings |
+
+## Module 3 — Community Discovery & Management
+
+Module 3 automatically finds relevant communities across connected platforms, scores them for relevance, and presents them for approval. Approved communities are added to `monitored_communities` and Module 4 starts monitoring them on its next run — no extra config.
+
+### 1. How it works end to end
+
+```
+Community discovery (scheduled every 24h, or manual)
+   → keyword search per platform (from your Topics)
+   → people-based discovery (communities the people you follow are active in)
+   → deduplicate, drop already-known
+   → AI relevance score (topic/audience/quality/opportunity)
+   → filter + rank → save as pending suggestions
+   → you approve/reject in Community Manager → approved ones become monitored
+   → Module 4 fetches posts from them automatically
+```
+
+### 2. Migration
+
+Run `supabase/migrations/004_community_discovery.sql` in the Supabase SQL editor (after 003). It adds `discovery_topics`, `monitored_people`, `community_suggestions`, `community_discovery_runs`, extends `discovery_settings` with community columns, and seeds starter topics.
+
+### 3. Add topics and keywords
+
+Dashboard → **Community Manager → Topics → Add Topic**. Topics drive keyword-based discovery. Seeded with Coaching/Leadership, Personal Growth, Spirituality, Community Building, Psychological Safety.
+
+### 4. Add people to monitor
+
+**Community Manager → People → Add Person**. Provide the person's handle on any platforms (e.g. Reddit `u/name`, Bluesky `name.bsky.social`). The system finds the communities/hashtags they're most active in.
+
+### 5. Trigger a manual run
+
+**Community Manager → Suggestions → Run Discovery Now**, or `POST /community/discover`. Runs in the background; suggestions appear in the queue when done.
+
+### 6. Review and approve suggestions
+
+**Suggestions** tab shows discovered communities ranked by relevance, with AI reasoning and suggested keywords (editable before approving). Approve adds it to monitoring; Reject stores it so it won't be suggested again. Bulk approve above / reject below a score threshold.
+
+### 7. How approved communities connect to Module 4
+
+Approving a suggestion writes a `monitored_communities` row (with the AI-suggested keywords). Module 4's post-discovery worker reads that table each run, so monitoring starts automatically.
+
+### 8. Understanding relevance scores
+
+Each community is scored 0–1 as a weighted average of topic relevance (0.40), audience fit (0.30), discussion quality (0.20), and contribution opportunity (0.10). Green ≥75%, amber 60–75%, red below.
+
+### 9. Tune the minimum threshold
+
+**Settings → Community Discovery Settings → Minimum Relevance Score**. Communities below it are not queued.
+
+### 10. Platform-specific limitations
+
+- **Discord**: no reliable public server-search API — keyword discovery is best-effort and may return nothing; people-based discovery is not feasible.
+- **Telegram**: the Bot API has no channel search; only public channels resolvable by username are found.
+- **Threads/YouTube**: keyword discovery returns topic hashtags / channels; people-based is limited.
+- Reddit, Bluesky, Mastodon have the richest community discovery.
+
+### Community API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET/POST | `/community/topics` | List / add topics |
+| PATCH/DELETE | `/community/topics/{id}` | Update / delete a topic |
+| GET/POST | `/community/people` | List / add monitored people |
+| PATCH/DELETE | `/community/people/{id}` | Update / delete a person |
+| POST | `/community/discover` | Run community discovery |
+| GET | `/community/discover/runs` | Discovery run history |
+| GET | `/community/suggestions` | Pending suggestions + counts |
+| POST | `/community/suggestions/{id}/approve` | Approve → start monitoring |
+| POST | `/community/suggestions/{id}/reject` | Reject a suggestion |
+| POST | `/community/suggestions/approve-all` | Bulk approve above a score |
+| POST | `/community/suggestions/reject-all` | Bulk reject below a score |
+| GET/POST | `/community/monitored` | List (grouped) / add monitored communities |
+| PATCH/DELETE | `/community/monitored/{id}` | Update / remove a monitored community |

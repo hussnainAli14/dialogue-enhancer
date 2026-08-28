@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { conversationsApi } from "@/lib/api";
+import type { CleanupScan } from "@/lib/types";
 import { useConversations } from "@/hooks/useConversations";
 import { useToast } from "@/hooks/useToast";
 import { PLATFORMS, PLATFORM_LABELS } from "@/lib/constants";
@@ -14,7 +15,7 @@ import RelevanceScore from "@/components/feed/RelevanceScore";
 import Button from "@/components/shared/Button";
 import Input from "@/components/shared/Input";
 import Select from "@/components/shared/Select";
-import LoadingSpinner from "@/components/shared/LoadingSpinner";
+import ConversationsSkeleton from "@/components/conversation/ConversationsSkeleton";
 import EmptyState from "@/components/shared/EmptyState";
 import ErrorState from "@/components/shared/ErrorState";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
@@ -33,38 +34,58 @@ export default function ConversationsPage() {
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
 
-  // Bulk cleanup of deleted source posts (Bluesky/Mastodon).
+  // Bulk cleanup of conversations whose source post was deleted on the platform.
+  // The scan runs as a background job, so this polls it for live progress.
   const [scanning, setScanning] = useState(false);
-  const [cleanupCount, setCleanupCount] = useState<number | null>(null);
+  const [progress, setProgress] = useState<{ checked: number; total: number } | null>(null);
+  const [scan, setScan] = useState<CleanupScan | null>(null);
   const [removing, setRemoving] = useState(false);
 
   const scanDeleted = async () => {
     setScanning(true);
+    setProgress({ checked: 0, total: 0 });
     try {
-      const res = await conversationsApi.cleanupDeleted(true); // dry run
-      if (res.deleted_count === 0) {
-        showToast("success", "No deleted posts found — everything is still live.");
-      } else {
-        setCleanupCount(res.deleted_count);
+      const { scan_id } = await conversationsApi.startCleanupScan();
+
+      // Poll until the job reports completed or failed.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const state = await conversationsApi.getCleanupScan(scan_id);
+        setProgress({ checked: state.checked, total: state.total });
+
+        if (state.status === "failed") {
+          throw new Error(state.error || "Scan failed");
+        }
+        if (state.status === "completed") {
+          if (state.deleted_count === 0) {
+            showToast("success", `Checked ${state.checked} posts — all still live.`);
+          } else {
+            setScan(state);
+          }
+          break;
+        }
       }
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Scan failed");
     } finally {
       setScanning(false);
+      setProgress(null);
     }
   };
 
   const confirmCleanup = async () => {
+    if (!scan) return;
     setRemoving(true);
     try {
-      const res = await conversationsApi.cleanupDeleted(false); // delete
+      // Applies the ids the scan already found — no second pass over the APIs.
+      const res = await conversationsApi.applyCleanupScan(scan.scan_id);
       showToast("success", `Removed ${res.deleted_count} deleted post(s).`);
       refetch();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Cleanup failed");
     } finally {
       setRemoving(false);
-      setCleanupCount(null);
+      setScan(null);
     }
   };
 
@@ -93,6 +114,12 @@ export default function ConversationsPage() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / 20)) : 1;
 
+  // A filter change refetches while the old results are still mounted, so both
+  // the first load and a refetch render the skeleton. Sizing it to the last
+  // result count keeps the page height steady instead of jumping.
+  const refreshing = loading && !!data;
+  const skeletonRows = Math.min(data?.conversations.length || 8, 8);
+
   if (error && !data) {
     return (
       <ErrorState
@@ -107,16 +134,39 @@ export default function ConversationsPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-medium text-text-primary">Conversations</h1>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft={<Trash2 className="h-4 w-4" />}
-          onClick={scanDeleted}
-          loading={scanning}
-          title="Scan Bluesky/Mastodon conversations and remove ones whose source post was deleted"
-        >
-          Clean up deleted
-        </Button>
+        <div className="group relative">
+          <Button
+            size="sm"
+            className="border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25"
+            iconLeft={<Trash2 className="h-4 w-4" />}
+            onClick={scanDeleted}
+            loading={scanning}
+          >
+            {scanning
+              ? progress && progress.total > 0
+                ? `Checking ${progress.checked}/${progress.total}…`
+                : "Starting scan…"
+              : "Clean up deleted"}
+          </Button>
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-80 rounded-lg border border-border bg-surface-raised p-3 text-xs leading-relaxed text-text-secondary shadow-lg group-hover:block group-focus-within:block"
+          >
+            <span className="block font-medium text-text-primary">Clean up deleted</span>
+            Checks every conversation on your connected platforms (Bluesky, Mastodon,
+            Reddit, Discord) to see whether the <span className="text-text-primary">original
+            post still exists</span> — authors sometimes delete the post you were going to
+            reply to.
+            <span className="mt-2 block">
+              This first runs a <span className="text-text-primary">scan only</span> and shows
+              you what it found. Nothing is removed until you confirm.
+            </span>
+            <span className="mt-2 block text-warning">
+              Confirming permanently deletes those conversations and their drafts. Posts it
+              cannot check are always left alone.
+            </span>
+          </span>
+        </div>
       </div>
 
       {/* Filters */}
@@ -127,6 +177,7 @@ export default function ConversationsPage() {
             setPlatformFilter(e.target.value);
             setPage(1);
           }}
+          disabled={refreshing}
           placeholder="All platforms"
           options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABELS[p] }))}
         />
@@ -136,6 +187,7 @@ export default function ConversationsPage() {
             setStatusFilter(e.target.value);
             setPage(1);
           }}
+          disabled={refreshing}
           placeholder="All statuses"
           options={["pending", "analysed", "skipped", "error"].map((s) => ({
             value: s,
@@ -155,11 +207,11 @@ export default function ConversationsPage() {
         <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
       </div>
 
-      {loading && !data ? (
-        <div className="flex justify-center py-20">
-          <LoadingSpinner size="lg" />
-        </div>
-      ) : filtered.length === 0 ? (
+      {loading ? (
+        <ConversationsSkeleton rows={skeletonRows} />
+      ) : (
+        <>
+      {filtered.length === 0 ? (
         <EmptyState
           icon={<MessageSquare className="h-12 w-12" />}
           title="No conversations found"
@@ -258,7 +310,7 @@ export default function ConversationsPage() {
             <Button
               size="sm"
               variant="ghost"
-              disabled={page <= 1}
+              disabled={page <= 1 || refreshing}
               onClick={() => setPage((p) => p - 1)}
             >
               Previous
@@ -269,7 +321,7 @@ export default function ConversationsPage() {
             <Button
               size="sm"
               variant="ghost"
-              disabled={page >= totalPages}
+              disabled={page >= totalPages || refreshing}
               onClick={() => setPage((p) => p + 1)}
             >
               Next
@@ -277,16 +329,18 @@ export default function ConversationsPage() {
           </div>
         </>
       )}
+        </>
+      )}
 
       <ConfirmDialog
-        open={cleanupCount !== null}
+        open={scan !== null}
         title="Remove deleted posts?"
-        description={`${cleanupCount ?? 0} conversation(s) have a source post that was deleted on the platform. Remove them and their drafts from your portal? This cannot be undone.`}
+        description={`${scan?.deleted_count ?? 0} of ${scan?.checked ?? 0} checked conversation(s) have a source post that was deleted on the platform. Remove them and their drafts from your portal? This cannot be undone.`}
         confirmLabel="Remove them"
         destructive
         loading={removing}
         onConfirm={confirmCleanup}
-        onCancel={() => setCleanupCount(null)}
+        onCancel={() => setScan(null)}
       />
     </div>
   );

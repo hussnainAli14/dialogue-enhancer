@@ -23,6 +23,15 @@ const STYLE_ICONS: Record<DraftStyle, React.ReactNode> = {
   constructive_challenge: <AlertTriangle className="h-4 w-4" />,
 };
 
+export type DraftActionName =
+  | "approve"
+  | "approveAndPost"
+  | "edit"
+  | "save"
+  | "reject"
+  | "post"
+  | "unapprove";
+
 export interface DraftActions {
   onApprove: (id: string) => void;
   onApproveAndPost: (id: string) => void;
@@ -39,13 +48,23 @@ interface DraftCardProps {
   canPost?: boolean;
   editOpen?: boolean;
   onOpenEdit?: (id: string | null) => void;
+  /** The action currently in flight for this draft, if any. */
+  busyAction?: DraftActionName | null;
 }
 
-export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdit }: DraftCardProps) {
+export default function DraftCard({
+  draft,
+  actions,
+  canPost,
+  editOpen,
+  onOpenEdit,
+  busyAction = null,
+}: DraftCardProps) {
   const [editText, setEditText] = useState(draft.content);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  const busy = busyAction !== null;
   const pending = draft.status === "pending";
   const editing = !!editOpen;
   // Approved or edited but not yet posted — can still be published or reverted.
@@ -127,6 +146,8 @@ export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdi
                 <Button
                   size="sm"
                   className="bg-success hover:bg-success/80"
+                  loading={busyAction === "approve"}
+                  disabled={busy}
                   onClick={() => actions.onApprove(draft.id)}
                 >
                   Approve
@@ -135,20 +156,34 @@ export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdi
                   <Button
                     size="sm"
                     className="bg-accent hover:bg-accent-hover"
+                    loading={busyAction === "approveAndPost"}
+                    disabled={busy}
                     onClick={() => actions.onApproveAndPost(draft.id)}
                   >
                     Approve & Post
                   </Button>
                 )}
-                <Button size="sm" onClick={() => onOpenEdit?.(draft.id)}>
+                <Button
+                  size="sm"
+                  loading={busyAction === "edit"}
+                  disabled={busy}
+                  onClick={() => onOpenEdit?.(draft.id)}
+                >
                   Edit & Approve
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => actions.onSave(draft.id)}>
+                <Button
+                  size="sm"
+                  className="border border-warning/40 bg-warning/15 text-warning hover:bg-warning/25"
+                  loading={busyAction === "save"}
+                  disabled={busy}
+                  onClick={() => actions.onSave(draft.id)}
+                >
                   Save for Later
                 </Button>
                 <Button
                   size="sm"
                   variant="danger"
+                  disabled={busy}
                   onClick={() => setRejectOpen((v) => !v)}
                 >
                   Reject
@@ -186,6 +221,8 @@ export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdi
                     size="sm"
                     variant="danger"
                     className="mt-2"
+                    loading={busyAction === "reject"}
+                    disabled={busy}
                     onClick={() => {
                       actions.onReject(draft.id, rejectReason || undefined);
                       setRejectOpen(false);
@@ -204,6 +241,8 @@ export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdi
                 <Button
                   size="sm"
                   className="bg-accent hover:bg-accent-hover"
+                  loading={busyAction === "post"}
+                  disabled={busy}
                   onClick={() => actions.onPost(draft.id)}
                 >
                   Post Now
@@ -212,6 +251,8 @@ export default function DraftCard({ draft, actions, canPost, editOpen, onOpenEdi
               <Button
                 size="sm"
                 variant="ghost"
+                loading={busyAction === "unapprove"}
+                disabled={busy}
                 onClick={() => actions.onUnapprove(draft.id)}
               >
                 Remove Approval

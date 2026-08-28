@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.database import get_supabase
 from app.envelope import fail, ok
@@ -217,3 +217,62 @@ async def get_feedback_summary():
         return ok(feedback_summary())
     except Exception:
         return fail("Failed to build feedback summary", 500)
+
+
+VALID_DRAFT_STATUSES = ("pending", "approved", "edited", "saved", "rejected", "posted")
+
+
+@router.get("")
+async def list_drafts(
+    status: str | None = Query(None),
+    platform: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """List drafts by status, each joined to its parent conversation.
+
+    Backs the Saved for Later view — without this a saved draft is only
+    reachable by navigating to the conversation that produced it.
+    """
+    try:
+        if status and status not in VALID_DRAFT_STATUSES:
+            return fail(f"Invalid status. Expected one of: {', '.join(VALID_DRAFT_STATUSES)}", 400)
+
+        supabase = get_supabase()
+        query = supabase.table("response_drafts").select("*", count="exact")
+        if status:
+            query = query.eq("status", status)
+
+        start = (page - 1) * page_size
+        res = query.order("created_at", desc=True).range(start, start + page_size - 1).execute()
+        drafts = res.data or []
+
+        conv_ids = list({d["conversation_id"] for d in drafts if d.get("conversation_id")})
+        conversations: dict[str, dict] = {}
+        if conv_ids:
+            rows = (
+                supabase.table("conversations")
+                .select("id, platform, post_url, post_author, original_post, submitted_at")
+                .in_("id", conv_ids)
+                .execute()
+            ).data or []
+            conversations = {r["id"]: r for r in rows}
+
+        items = []
+        for d in drafts:
+            conv = conversations.get(d.get("conversation_id")) or {}
+            # Platform lives on the conversation, so filter here rather than in the query.
+            if platform and conv.get("platform") != platform:
+                continue
+            items.append({**d, "conversation": conv})
+
+        return ok(
+            {
+                "page": page,
+                "page_size": page_size,
+                "total": res.count or 0,
+                "drafts": items,
+            }
+        )
+    except Exception as exc:
+        return fail(f"Failed to load drafts: {exc}", 500)

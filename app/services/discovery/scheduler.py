@@ -45,6 +45,11 @@ def start_scheduler() -> None:
     log_task("analysis", None, "started", f"Discovery scheduler started (every {interval} min).")
 
 
+def current_scheduler() -> AsyncIOScheduler | None:
+    """The running scheduler instance (shared with Module 3's community job)."""
+    return _scheduler
+
+
 def stop_scheduler() -> None:
     global _scheduler
     if _scheduler and _scheduler.running:

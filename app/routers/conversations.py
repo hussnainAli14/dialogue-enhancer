@@ -1,8 +1,10 @@
 """Module 7 — conversation endpoints."""
 
+import traceback
+
 from fastapi import APIRouter, BackgroundTasks, Query
 
-from app.database import get_supabase, log_task
+from app.database import detach_feedback_log, get_supabase, log_task
 from app.envelope import fail, ok
 from app.models.conversations import ConversationSubmit
 from app.services.analysis import run_pipeline
@@ -142,15 +144,46 @@ async def get_conversation(conversation_id: str):
 
 
 @router.post("/cleanup-deleted")
-async def cleanup_deleted(dry_run: bool = Query(True)):
-    """Scan all connected Bluesky/Mastodon conversations for deleted source
-    posts. dry_run=true reports them; dry_run=false also removes them."""
-    try:
-        from app.services.posting import scan_deleted
+async def cleanup_deleted():
+    """Start a background scan for conversations whose source post was deleted.
 
-        return ok(await scan_deleted(dry_run=dry_run))
+    One live platform call per conversation means this runs for a minute or
+    more, so it returns a scan_id immediately and the client polls for progress
+    rather than holding the request open.
+    """
+    try:
+        from app.services.posting import start_scan
+
+        return ok({"scan_id": start_scan(), "status": "running"}, 202)
     except Exception as exc:
-        return fail(f"Cleanup failed: {exc}", 500)
+        return fail(f"Failed to start cleanup scan: {exc}", 500)
+
+
+@router.get("/cleanup-scans/{scan_id}")
+async def cleanup_scan_status(scan_id: str):
+    """Progress and results for a running or finished cleanup scan."""
+    from app.services.posting import get_scan
+
+    state = get_scan(scan_id)
+    if not state:
+        return fail("Scan not found or expired. Run the scan again.", 404)
+    return ok(state)
+
+
+@router.post("/cleanup-scans/{scan_id}/apply")
+async def cleanup_scan_apply(scan_id: str):
+    """Delete the conversations the given completed scan flagged."""
+    from app.services.posting import apply_scan
+
+    try:
+        return ok(apply_scan(scan_id))
+    except ValueError as exc:
+        return fail(str(exc), 400)
+    except Exception as exc:
+        # A bare "Cleanup failed" hides why; print the trace so the server log
+        # carries the real cause.
+        traceback.print_exc()
+        return fail(f"Cleanup failed: {type(exc).__name__}: {exc}", 500)
 
 
 @router.get("/{conversation_id}/source-status")
@@ -180,6 +213,7 @@ async def delete_conversation(conversation_id: str):
             return fail("Conversation not found", 404)
         # Remove the discovered_posts row too (FK is ON DELETE SET NULL, so it
         # would otherwise linger with a null conversation_id).
+        detach_feedback_log([conversation_id])
         supabase.table("discovered_posts").delete().eq("conversation_id", conversation_id).execute()
         supabase.table("conversations").delete().eq("id", conversation_id).execute()
         return ok({"deleted": True, "conversation_id": conversation_id})

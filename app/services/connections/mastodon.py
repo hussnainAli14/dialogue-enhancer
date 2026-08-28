@@ -123,6 +123,111 @@ class MastodonConnector(BaseConnector):
 
         return await asyncio.to_thread(_work)
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("mastodon")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _matches(name: str) -> str | None:
+            low = name.lower()
+            for kw in keywords:
+                k = kw.lower().replace(" ", "")
+                if k in low or low in k:
+                    return kw
+            return None
+
+        def _work():
+            m = self._client(conn)
+            out: list[DiscoveredCommunity] = []
+            seen: set[str] = set()
+
+            try:
+                trending = m.trending_tags()
+            except Exception:
+                trending = []
+            for t in trending:
+                name = t.get("name", "")
+                kw = _matches(name)
+                if not kw or name in seen:
+                    continue
+                seen.add(name)
+                uses = sum(int(h.get("uses", 0)) for h in (t.get("history") or [])[:7])
+                level = "high" if uses > 50 else "medium" if uses > 10 else "low"
+                out.append(
+                    DiscoveredCommunity(
+                        platform="mastodon",
+                        community_id=name,
+                        community_name=f"#{name}",
+                        community_url=t.get("url"),
+                        activity_level=level,
+                        discovered_via_keywords=[kw],
+                    )
+                )
+
+            for kw in keywords:
+                try:
+                    res = m.search_v2(kw)
+                except Exception:
+                    continue
+                for tag in (res.get("hashtags") or [])[:5]:
+                    name = tag.get("name", "")
+                    if not name or name in seen:
+                        continue
+                    seen.add(name)
+                    out.append(
+                        DiscoveredCommunity(
+                            platform="mastodon",
+                            community_id=name,
+                            community_name=f"#{name}",
+                            community_url=tag.get("url"),
+                            discovered_via_keywords=[kw],
+                        )
+                    )
+            return out[:limit]
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        from app.services import token_store
+        from app.services.community import DiscoveredCommunity
+
+        conn = token_store.get_connection("mastodon")
+        if not conn or conn.status != "connected":
+            return []
+
+        def _work():
+            m = self._client(conn)
+            acct = m.account_lookup(handle.lstrip("@"))
+            statuses = m.account_statuses(acct["id"], limit=40)
+            counts: dict[str, int] = {}
+            for s in statuses:
+                for tag in s.get("tags") or []:
+                    name = tag.get("name")
+                    if name:
+                        counts[name] = counts.get(name, 0) + 1
+            top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+            return [
+                DiscoveredCommunity(
+                    platform="mastodon",
+                    community_id=name,
+                    community_name=f"#{name}",
+                    discovery_method="people_based",
+                )
+                for name, _ in top
+            ]
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

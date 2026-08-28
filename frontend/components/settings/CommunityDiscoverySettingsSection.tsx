@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Radar } from "lucide-react";
+import { Users } from "lucide-react";
 import { discoveryApi } from "@/lib/api";
 import type { DiscoverySettings } from "@/lib/types";
 import { useToast } from "@/hooks/useToast";
@@ -9,7 +9,7 @@ import Button from "@/components/shared/Button";
 import Input from "@/components/shared/Input";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 
-export default function DiscoverySettingsSection() {
+export default function CommunityDiscoverySettingsSection() {
   const { showToast } = useToast();
   const [settings, setSettings] = useState<DiscoverySettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -25,9 +25,15 @@ export default function DiscoverySettingsSection() {
     if (!settings) return;
     setSaving(true);
     try {
-      const updated = await discoveryApi.updateSettings(settings);
+      const updated = await discoveryApi.updateSettings({
+        community_discovery_enabled: settings.community_discovery_enabled,
+        community_schedule_hours: settings.community_schedule_hours,
+        max_communities_per_platform: settings.max_communities_per_platform,
+        min_community_relevance_score: settings.min_community_relevance_score,
+        max_community_suggestions: settings.max_community_suggestions,
+      });
       setSettings(updated);
-      showToast("success", "Discovery settings saved.");
+      showToast("success", "Community discovery settings saved.");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -39,11 +45,11 @@ export default function DiscoverySettingsSection() {
     <section className="space-y-4">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-medium text-text-primary">
-          <Radar className="h-5 w-5 text-accent-light" />
-          Discovery Settings
+          <Users className="h-5 w-5 text-accent-light" />
+          Community Discovery Settings
         </h2>
         <p className="mt-1 text-sm text-text-secondary">
-          Control how the automatic discovery worker fetches and submits conversations.
+          Control how the system finds and suggests new communities to monitor.
         </p>
       </div>
 
@@ -54,73 +60,65 @@ export default function DiscoverySettingsSection() {
       ) : (
         <div className="space-y-4 rounded-xl border border-border bg-surface p-6">
           <label className="flex items-center justify-between">
-            <span className="text-sm text-text-primary">Discovery Enabled</span>
+            <span className="text-sm text-text-primary">Community Discovery Enabled</span>
             <button
-              onClick={() => set("is_enabled", !settings.is_enabled)}
+              onClick={() => set("community_discovery_enabled", !settings.community_discovery_enabled)}
               className={
                 "relative h-6 w-11 shrink-0 rounded-full p-0 transition-colors " +
-                (settings.is_enabled ? "bg-accent" : "bg-surface-raised")
+                (settings.community_discovery_enabled ? "bg-accent" : "bg-surface-raised")
               }
-              aria-label="Toggle discovery"
+              aria-label="Toggle community discovery"
             >
               <span
                 className={
                   "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform " +
-                  (settings.is_enabled ? "translate-x-5" : "translate-x-0")
+                  (settings.community_discovery_enabled ? "translate-x-5" : "translate-x-0")
                 }
               />
             </button>
           </label>
 
           <Input
-            label="Schedule Interval (minutes)"
+            label="Discovery Schedule (hours)"
             type="number"
             min="1"
-            value={String(settings.schedule_interval_minutes)}
-            onChange={(e) => set("schedule_interval_minutes", Number(e.target.value))}
+            value={String(settings.community_schedule_hours ?? 24)}
+            onChange={(e) => set("community_schedule_hours", Number(e.target.value))}
           />
-
           <Input
-            label="Max Posts Per Run"
+            label="Max Communities Per Platform"
             type="number"
             min="1"
-            value={String(settings.max_posts_per_run)}
-            onChange={(e) => set("max_posts_per_run", Number(e.target.value))}
+            value={String(settings.max_communities_per_platform ?? 20)}
+            onChange={(e) => set("max_communities_per_platform", Number(e.target.value))}
           />
-
-          <div>
-            <Input
-              label="Max Conversations Per Day"
-              type="number"
-              min="0"
-              value={String(settings.max_conversations_per_day)}
-              onChange={(e) => set("max_conversations_per_day", Number(e.target.value))}
-            />
-            <p className="mt-1 text-xs text-text-muted">
-              The system stops submitting conversations for today once this limit is reached.
-            </p>
-          </div>
-
           <div>
             <label className="text-xs text-text-secondary">
-              Minimum Relevance Score: {(settings.min_relevance_score * 100).toFixed(0)}%
+              Minimum Relevance Score: {((settings.min_community_relevance_score ?? 0.6) * 100).toFixed(0)}%
             </label>
             <input
               type="range"
               min={0}
               max={1}
               step={0.05}
-              value={settings.min_relevance_score}
-              onChange={(e) => set("min_relevance_score", Number(e.target.value))}
+              value={settings.min_community_relevance_score ?? 0.6}
+              onChange={(e) => set("min_community_relevance_score", Number(e.target.value))}
               className="w-full accent-accent"
             />
             <p className="mt-1 text-xs text-text-muted">
-              Posts below this score are fetched and stored but not submitted for analysis.
+              Communities scoring below this are not added to the suggestions queue.
             </p>
           </div>
+          <Input
+            label="Max Suggestions Per Run"
+            type="number"
+            min="1"
+            value={String(settings.max_community_suggestions ?? 50)}
+            onChange={(e) => set("max_community_suggestions", Number(e.target.value))}
+          />
 
           <Button onClick={save} loading={saving}>
-            Save Discovery Settings
+            Save Community Discovery Settings
           </Button>
         </div>
       )}

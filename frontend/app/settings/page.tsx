@@ -6,6 +6,7 @@ import Input from "@/components/shared/Input";
 import { useToast } from "@/hooks/useToast";
 import ConnectionsSection from "@/components/settings/ConnectionsSection";
 import DiscoverySettingsSection from "@/components/settings/DiscoverySettingsSection";
+import CommunityDiscoverySettingsSection from "@/components/settings/CommunityDiscoverySettingsSection";
 import { PLATFORM_LABELS } from "@/lib/constants";
 
 const STORAGE_KEY = "dialogue-enhancer-settings";
@@ -67,6 +68,8 @@ export default function SettingsPage() {
       <ConnectionsSection />
 
       <DiscoverySettingsSection />
+
+      <CommunityDiscoverySettingsSection />
 
       <div className="mx-auto max-w-xl space-y-6">
       <p className="rounded-xl border border-border bg-surface p-4 text-sm text-text-secondary">

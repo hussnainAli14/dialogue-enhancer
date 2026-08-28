@@ -7,16 +7,26 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.envelope import fail, ok
-from app.routers import connections, conversations, discovery, drafts, knowledge
+from app.routers import (
+    community_discovery,
+    connections,
+    conversations,
+    discovery,
+    drafts,
+    knowledge,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the Module 4 discovery scheduler inside the event loop.
+    # Start the Module 4 discovery scheduler inside the event loop, then add the
+    # Module 3 community-discovery job to the same scheduler.
+    from app.services.community.community_scheduler import add_community_discovery_job
     from app.services.discovery.scheduler import start_scheduler, stop_scheduler
 
     try:
         start_scheduler()
+        add_community_discovery_job()
     except Exception:
         # Discovery is optional — never block server startup on it.
         pass
@@ -60,6 +70,7 @@ app.include_router(conversations.router)
 app.include_router(drafts.router)
 app.include_router(connections.router)
 app.include_router(discovery.router)
+app.include_router(community_discovery.router)
 
 
 @app.exception_handler(RequestValidationError)

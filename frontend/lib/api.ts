@@ -8,17 +8,23 @@ import type {
   ConversationFilters,
   ConversationListResponse,
   ConversationSubmitData,
+  CommunityDiscoveryRun,
+  CommunitySuggestion,
   DiscoveredPost,
   DiscoveryRun,
   DiscoverySettings,
   DiscoveryStatus,
+  DiscoveryTopic,
+  MonitoredPerson,
   Document,
   DocumentDetail,
   FeedbackSummary,
   KnowledgeListResponse,
   MonitoredCommunity,
   PlatformConnectionStatus,
+  DraftListResponse,
   ResponseDraft,
+  CleanupScan,
 } from "./types";
 
 const client = axios.create({
@@ -115,50 +121,75 @@ export const conversationsApi = {
       client.delete(`/conversations/${id}`)
     ),
 
-  cleanupDeleted: (dryRun: boolean) =>
-    unwrap<{
-      checked: number;
-      deleted: { id: string; platform: string; post_url: string | null }[];
-      deleted_count: number;
-      removed?: boolean;
-      dry_run: boolean;
-    }>(client.post(`/conversations/cleanup-deleted`, null, { params: { dry_run: dryRun } })),
+  // The cleanup scan makes one platform call per conversation, so it runs as a
+  // background job: start it, poll for progress, then apply what it found.
+  startCleanupScan: () =>
+    unwrap<{ scan_id: string; status: string }>(
+      client.post(`/conversations/cleanup-deleted`)
+    ),
+
+  getCleanupScan: (scanId: string) =>
+    unwrap<CleanupScan>(client.get(`/conversations/cleanup-scans/${scanId}`)),
+
+  applyCleanupScan: (scanId: string) =>
+    unwrap<{ removed: boolean; deleted_count: number }>(
+      client.post(`/conversations/cleanup-scans/${scanId}/apply`)
+    ),
 };
+
+/** Broadcast so long-lived UI (the sidebar counters) can refresh immediately
+ *  instead of waiting for its next poll. Fired from every draft mutation. */
+export const DRAFTS_CHANGED_EVENT = "drafts:changed";
+
+function notifyDraftsChanged<T>(result: T): T {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(DRAFTS_CHANGED_EVENT));
+  }
+  return result;
+}
 
 export const draftsApi = {
   approveDraft: (id: string) =>
-    unwrap<ResponseDraft>(client.post(`/drafts/${id}/approve`)),
+    unwrap<ResponseDraft>(client.post(`/drafts/${id}/approve`)).then(notifyDraftsChanged),
 
   editAndApproveDraft: (id: string, editedContent: string) =>
     unwrap<ResponseDraft>(
       client.post(`/drafts/${id}/edit-and-approve`, { edited_content: editedContent })
-    ),
+    ).then(notifyDraftsChanged),
 
   rejectDraft: (id: string, reason?: string) =>
     unwrap<ResponseDraft>(
       client.post(`/drafts/${id}/reject`, { rejection_reason: reason ?? null })
-    ),
+    ).then(notifyDraftsChanged),
 
-  saveDraft: (id: string) => unwrap<ResponseDraft>(client.post(`/drafts/${id}/save`)),
+  saveDraft: (id: string) =>
+    unwrap<ResponseDraft>(client.post(`/drafts/${id}/save`)).then(notifyDraftsChanged),
 
   markPosted: (id: string) =>
-    unwrap<ResponseDraft>(client.post(`/drafts/${id}/mark-posted`)),
+    unwrap<ResponseDraft>(client.post(`/drafts/${id}/mark-posted`)).then(notifyDraftsChanged),
 
   postDraft: (id: string) =>
     unwrap<{ draft: ResponseDraft; platform_result: unknown }>(
       client.post(`/drafts/${id}/post`)
-    ).then((r) => r.draft),
+    ).then((r) => notifyDraftsChanged(r.draft)),
 
   approveAndPostDraft: (id: string) =>
     unwrap<{ draft: ResponseDraft; platform_result: unknown }>(
       client.post(`/drafts/${id}/approve-and-post`)
-    ).then((r) => r.draft),
+    ).then((r) => notifyDraftsChanged(r.draft)),
 
   unapproveDraft: (id: string) =>
-    unwrap<ResponseDraft>(client.post(`/drafts/${id}/unapprove`)),
+    unwrap<ResponseDraft>(client.post(`/drafts/${id}/unapprove`)).then(notifyDraftsChanged),
 
   getFeedbackSummary: () =>
     unwrap<FeedbackSummary>(client.get("/drafts/feedback-summary")),
+
+  getDrafts: (params: {
+    status?: string;
+    platform?: string;
+    page?: number;
+    page_size?: number;
+  } = {}) => unwrap<DraftListResponse>(client.get("/drafts", { params })),
 };
 
 export const connectionsApi = {
@@ -262,4 +293,72 @@ export const discoveryApi = {
 
   updateSettings: (data: Partial<DiscoverySettings>) =>
     unwrap<DiscoverySettings>(client.post("/discovery/settings", data)),
+};
+
+export const communityApi = {
+  // Topics
+  getTopics: () => unwrap<{ topics: DiscoveryTopic[] }>(client.get("/community/topics")),
+  addTopic: (data: { topic: string; keywords: string[]; description?: string }) =>
+    unwrap<{ topic: DiscoveryTopic }>(client.post("/community/topics", data)),
+  updateTopic: (id: string, data: Partial<DiscoveryTopic>) =>
+    unwrap<{ topic: DiscoveryTopic }>(client.patch(`/community/topics/${id}`, data)),
+  deleteTopic: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/topics/${id}`)),
+
+  // People
+  getPeople: () => unwrap<{ people: MonitoredPerson[] }>(client.get("/community/people")),
+  addPerson: (data: { name: string; description?: string; platform_handles: Record<string, string> }) =>
+    unwrap<{ person: MonitoredPerson }>(client.post("/community/people", data)),
+  updatePerson: (id: string, data: Partial<MonitoredPerson>) =>
+    unwrap<{ person: MonitoredPerson }>(client.patch(`/community/people/${id}`, data)),
+  deletePerson: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/people/${id}`)),
+
+  // Discovery
+  discover: (body: { modes?: string[]; platforms?: string[] } = {}) =>
+    unwrap<{ run_id: string; status: string }>(client.post("/community/discover", body)),
+  getRuns: (page = 1) =>
+    unwrap<{ page: number; total: number; runs: CommunityDiscoveryRun[] }>(
+      client.get("/community/discover/runs", { params: { page } })
+    ),
+
+  // Suggestions
+  getSuggestions: (params: { platform?: string; status?: string; min_score?: number } = {}) =>
+    unwrap<{
+      suggestions: CommunitySuggestion[];
+      counts: { pending: number; approved: number; rejected: number };
+    }>(client.get("/community/suggestions", { params })),
+  approveSuggestion: (id: string, keywords?: string[]) =>
+    unwrap<{ community: MonitoredCommunity | null }>(
+      client.post(`/community/suggestions/${id}/approve`, keywords ? { keywords } : {})
+    ),
+  rejectSuggestion: (id: string, reason?: string) =>
+    unwrap<{ suggestion: CommunitySuggestion }>(
+      client.post(`/community/suggestions/${id}/reject`, { rejection_reason: reason ?? null })
+    ),
+  approveAll: (minScore: number) =>
+    unwrap<{ approved: number }>(client.post("/community/suggestions/approve-all", { min_score: minScore })),
+  rejectAll: (maxScore: number, reason?: string) =>
+    unwrap<{ rejected: number }>(
+      client.post("/community/suggestions/reject-all", { max_score: maxScore, rejection_reason: reason ?? null })
+    ),
+
+  // Monitored communities
+  getMonitored: () =>
+    unwrap<{ communities: Record<string, MonitoredCommunity[]>; total: number }>(
+      client.get("/community/monitored")
+    ),
+  addMonitored: (data: {
+    platform: string;
+    community_id: string;
+    community_name: string;
+    keywords: string[];
+    priority: number;
+  }) => unwrap<{ community: MonitoredCommunity }>(client.post("/community/monitored", data)),
+  updateMonitored: (
+    id: string,
+    data: Partial<{ keywords: string[]; priority: number; is_active: boolean }>
+  ) => unwrap<{ community: MonitoredCommunity }>(client.patch(`/community/monitored/${id}`, data)),
+  deleteMonitored: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/community/monitored/${id}`)),
 };

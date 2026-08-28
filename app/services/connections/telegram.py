@@ -77,6 +77,38 @@ class TelegramConnector(BaseConnector):
         except Exception:
             return False
 
+    # ── Module 3 — community discovery ──────────────────
+    async def search_communities(self, keywords: list[str], limit: int = 20):
+        # The Telegram Bot API has no public channel search — nothing to return.
+        return []
+
+    async def get_person_communities(self, handle: str, limit: int = 10):
+        """If the handle is a public channel/username, resolve it via getChat."""
+        from app.services.community import DiscoveredCommunity
+
+        username = handle.lstrip("@").strip()
+        if not username:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                res = await http.get(_api("getChat"), params={"chat_id": f"@{username}"})
+                if res.status_code != 200 or not res.json().get("ok"):
+                    return []
+                chat = res.json()["result"]
+        except Exception:
+            return []
+        return [
+            DiscoveredCommunity(
+                platform="telegram",
+                community_id=username,
+                community_name=chat.get("title") or f"@{username}",
+                community_url=f"https://t.me/{username}",
+                description=chat.get("description"),
+                activity_level="unknown",
+                discovery_method="people_based",
+            )
+        ]
+
     async def fetch_posts(
         self,
         connection: PlatformConnection,

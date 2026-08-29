@@ -14,6 +14,7 @@ from app.routers import (
     discovery,
     drafts,
     knowledge,
+    posts,
 )
 
 
@@ -23,10 +24,12 @@ async def lifespan(app: FastAPI):
     # Module 3 community-discovery job to the same scheduler.
     from app.services.community.community_scheduler import add_community_discovery_job
     from app.services.discovery.scheduler import start_scheduler, stop_scheduler
+    from app.services.replies_scheduler import add_reply_tracking_job
 
     try:
         start_scheduler()
         add_community_discovery_job()
+        add_reply_tracking_job()
     except Exception:
         # Discovery is optional — never block server startup on it.
         pass
@@ -71,6 +74,7 @@ app.include_router(drafts.router)
 app.include_router(connections.router)
 app.include_router(discovery.router)
 app.include_router(community_discovery.router)
+app.include_router(posts.router)
 
 
 @app.exception_handler(RequestValidationError)

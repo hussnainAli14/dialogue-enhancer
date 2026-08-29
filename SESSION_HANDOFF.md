@@ -15,9 +15,11 @@ This document is a complete handoff for the project. It explains what the system
   - GitHub: `hussnainAli14/dialogue-enhancer` (frontend lives in `frontend/`). Pushed via an SSH alias `github-dlasser`.
 - **Git branches:**
   - `main` = what deploys (Render + Vercel auto-deploy from it). Contains Modules 1,2,4,6,7,8,9,10 + posting for Bluesky/Mastodon/Reddit/Discord + all fixes below. Latest deployed commit: `18af134`.
-  - `module-3-community-discovery` = **Module 3 (Community Discovery)**, pushed but **intentionally not merged/deployed**. Pull this branch to run Module 3 locally. Commit `8e75914`.
+  - `module-3-community-discovery` = **Module 3 (Community Discovery)** plus **standalone posting** and **reply tracking** (both added this session). Pushed but **intentionally not merged/deployed**. Pull this branch to run these features locally.
+- **Standalone posting (new this session):** a `/compose` page publishes the author's own post (text + up to 4 images) to **one or more** connected platforms at once (Bluesky + Mastodon). See §6a.
+- **Reply tracking (new this session):** replies/comments to the author's own posts are polled from each platform and surfaced in the feed as starred `reply_to_me` items, drafted on demand. Requires migration **005**. See §6b.
 - **Connected platforms (production, in Supabase):** Bluesky + Mastodon (live, verified) and Discord (bot created + code ready). Reddit code is done but **blocked by Reddit's app-approval policy** (a Data API access request form was submitted — awaiting approval). Telegram token set but network-blocked on some local networks.
-- **Posting works** for **Bluesky, Mastodon, Reddit, Discord** (Approve & Post / Post Now / Remove Approval). Threads/YouTube not wired for posting.
+- **Posting works** for **Bluesky, Mastodon, Reddit, Discord** (Approve & Post / Post Now / Remove Approval). Standalone posting works for Bluesky + Mastodon. Threads/YouTube not wired for posting.
 - **Deferred to the end:** Dockerise the Render backend with LibreOffice so `.doc` uploads work in production (currently `.doc` is cleanly rejected on Render; works locally where MS Word/LibreOffice exist).
 - **Working rule:** do **not** `git push`/deploy without explicit approval.
 - **Latest working session (24 Aug 2026, local, on `module-3-community-discovery`):** fresh environment set up from scratch, whole stack verified end-to-end, three real bugs fixed, a **Saved for Later** feature added, and a round of UI work. Nothing committed or pushed. See [§14](#14-session-24-aug-2026--environment-fixes-and-new-work) and [§15](#15-session-24-aug-2026--ui-changes).
@@ -171,12 +173,32 @@ Only Bluesky and Mastodon are wired for posting. The other platforms return a cl
 
 ---
 
+## 6a. Standalone posting (new this session)
+
+Separate from Module 9 reply posting, the app can now publish the author's **own** post (a "broadcast", not a reply).
+
+- **Frontend:** `/compose` page (sidebar → **Compose Post**). Multi-select platform pills (all connected pre-selected, Select all / Clear all), textarea with a live character counter that uses the **strictest** limit across the selected platforms, image upload (up to 4, with per-image alt text and previews), and per-platform result rows (✓ View post link / ✗ error) after posting.
+- **Backend:** `POST /posts` (multipart: `platforms[]`, `text`, `images[]`, `alts[]`) posts to every selected platform independently — one failing never blocks the others; returns `{results[], posted, total}`. `GET /posts/targets` lists which platforms support standalone posting and whether each is connected. `create_post` is implemented on the Bluesky (`send_images`/`send_post`) and Mastodon (`media_post` + `status_post`) connectors; `publish_post` in `app/services/posting.py` enforces connection + char limits.
+- **Bluesky session self-heal:** the Bluesky app password is now stored (encrypted, in the `refresh_token` field) at connect time, and an expired/revoked session auto-relogins once and retries (`_fresh_client` in `bluesky.py`). Connections made **before** this change must be reconnected once so the app password gets stored.
+
+## 6b. Reply tracking (new this session — needs migration 005)
+
+Closes the loop: when someone replies to one of the author's posts, it shows up in the dashboard feed.
+
+- **Recording:** every standalone post and every posted reply is saved to `authored_posts` (`app/services/replies.py` → `record_authored_post`, called from `posting.py`).
+- **Polling:** `poll_replies()` checks each connected platform for replies to those posts (Bluesky `get_post_thread`, Mastodon `status_context`; excludes the author's own replies). New replies become **starred `reply_to_me` conversations** with `analysis_status='reply_pending'` — surfaced but **not** auto-drafted. The reply's platform id is stored in `discovered_posts` so a response threads back through the normal `publish_reply` path. Runs every 15 min on the shared scheduler (`replies_scheduler.py`) and via manual `POST /posts/poll-replies`.
+- **Draft on demand:** `POST /conversations/{id}/generate-drafts` runs the analysis+drafting pipeline when the author clicks **Draft response**.
+- **Feed UI:** replies pin to the top with a gold star + amber border and an "In reply to your post" link; a **Draft response** button (pre-draft) then the usual Approve & Post; a new **"Replies to you"** stat card with a 📬 button to poll now.
+- **Migration:** `supabase/migrations/005_reply_tracking.sql` — adds `source`, `is_reply_to_me`, `parent_post_url` columns to `conversations`, plus `authored_posts` and `seen_replies` tables. **Already run on Supabase this session.**
+
+---
+
 ## 7. Current running / connected state (as of this session)
 
 - **Backend**: `uvicorn app.main:app` on `http://localhost:8000`.
 - **Frontend**: `next start -p 3000` on `http://localhost:3000` (production build).
 - **LLM**: `LLM_PROVIDER=ollama`, model `llama3.2` via local Ollama (`http://localhost:11434`). Embeddings via OpenAI.
-- **Supabase**: base schema + migrations **002** (connections) + **003** (discovery) applied; `documents` storage bucket exists; discovery seed communities loaded (12).
+- **Supabase**: base schema + migrations **002** (connections) + **003** (discovery) + **004** (community discovery) + **005** (reply tracking) applied; `documents` storage bucket exists; discovery seed communities loaded (12).
 - **Connected platforms**: **Bluesky** and **Mastodon** (live, verified). Telegram token set but network-blocked here. Reddit/Discord/Threads/YouTube: code ready, not connected.
 - **Discovery**: enabled, 30-min interval, `max_posts_per_run=8`, daily cap 5.
 

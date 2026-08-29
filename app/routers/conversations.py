@@ -99,6 +99,9 @@ async def list_conversations(
                         "submitted_at": c["submitted_at"],
                         "draft_count": draft_counts.get(c["id"], 0),
                         "has_posted_reply": c["id"] in posted_ids,
+                        "source": c.get("source") or "manual",
+                        "is_reply_to_me": c.get("is_reply_to_me") or False,
+                        "parent_post_url": c.get("parent_post_url"),
                     }
                     for c in convs
                 ],
@@ -106,6 +109,28 @@ async def list_conversations(
         )
     except Exception:
         return fail("Failed to list conversations", 500)
+
+
+@router.post("/{conversation_id}/generate-drafts")
+async def generate_drafts(conversation_id: str, background_tasks: BackgroundTasks):
+    """Run the analysis + drafting pipeline on demand — used for replies-to-you,
+    which are surfaced without auto-drafting. Idempotent-ish: re-runs analysis."""
+    try:
+        supabase = get_supabase()
+        conv = (
+            supabase.table("conversations").select("id, analysis_status")
+            .eq("id", conversation_id).limit(1).execute()
+        ).data
+        if not conv:
+            return fail("Conversation not found", 404)
+        supabase.table("conversations").update({"analysis_status": "pending"}).eq(
+            "id", conversation_id
+        ).execute()
+        log_task("analysis", conversation_id, "started", "On-demand draft generation.")
+        background_tasks.add_task(run_pipeline, conversation_id)
+        return ok({"conversation_id": conversation_id, "status": "pending"}, 202)
+    except Exception:
+        return fail("Failed to start draft generation", 500)
 
 
 @router.get("/{conversation_id}")

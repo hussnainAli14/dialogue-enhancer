@@ -11,6 +11,17 @@ from app.schemas.connections import ConnectionResult, PlatformConnection
 
 
 @dataclass
+class PostMedia:
+    """One image attached to a standalone post. `data` is the raw bytes,
+    `content_type` the MIME type (e.g. image/png), `alt` optional alt text."""
+
+    data: bytes
+    content_type: str
+    filename: str = "image"
+    alt: str = ""
+
+
+@dataclass
 class UniversalPost:
     """One post normalised across every platform. engagement_score is a float
     in [0, 1] computed per-platform from that platform's own signals."""
@@ -71,6 +82,22 @@ class BaseConnector(ABC):
         """Publish a reply to a post on this platform. Overridden by connectors
         that support posting; others raise a clear error."""
         raise NotImplementedError(f"Posting is not yet supported for {self.platform}.")
+
+    async def create_post(
+        self, connection: PlatformConnection, text: str, media: list["PostMedia"] | None = None
+    ) -> dict:
+        """Publish a new standalone post (the author's own thought), optionally
+        with images. Overridden by connectors that support it; others raise a
+        clear error. Returns at least {url, id}."""
+        raise NotImplementedError(f"Standalone posting is not yet supported for {self.platform}.")
+
+    async def fetch_replies(
+        self, connection: PlatformConnection, post_id: str, exclude_author_id: str | None = None
+    ) -> list[dict]:
+        """Return replies made to the author's own post `post_id`. Each item:
+        {reply_id, post_url, author_name, author_id, content, created_at}.
+        Connectors that support it override this; others return an empty list."""
+        return []
 
     # ── Module 3 — community discovery (default no-ops) ──────────────
     async def search_communities(self, keywords: list[str], limit: int = 20) -> list:

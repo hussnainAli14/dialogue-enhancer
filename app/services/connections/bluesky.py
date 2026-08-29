@@ -46,7 +46,9 @@ class BlueskyConnector(BaseConnector):
                 account_name=getattr(profile, "handle", handle),
                 account_id=getattr(profile, "did", handle),
                 access_token=session_string,
-                refresh_token=None,
+                # App password is kept (encrypted at rest) so the session can be
+                # re-established automatically when it expires or is revoked.
+                refresh_token=app_password,
                 token_expires_at=None,
                 scope=None,
                 metadata={"handle": handle, "did": getattr(profile, "did", None)},
@@ -72,6 +74,36 @@ class BlueskyConnector(BaseConnector):
         client = Client()
         if connection.access_token:
             client.login(session_string=connection.access_token)
+        return client
+
+    @staticmethod
+    def _is_expired_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return "expiredtoken" in msg or "token has been revoked" in msg or "token has expired" in msg
+
+    def _fresh_client(self, connection: PlatformConnection):
+        """Re-login with the stored handle + app password (refresh_token) and
+        persist the new session string, so a revoked/expired session self-heals.
+        Returns a logged-in client. Raises a clear error if no app password."""
+        from atproto import Client
+
+        from app.services import token_store
+
+        handle = (connection.metadata or {}).get("handle") or connection.account_name
+        app_password = connection.refresh_token or settings.BLUESKY_APP_PASSWORD
+        handle = handle or settings.BLUESKY_HANDLE
+        if not handle or not app_password:
+            raise ValueError(
+                "Bluesky session expired and no stored app password to reconnect. "
+                "Reconnect Bluesky in Connections."
+            )
+        client = Client()
+        profile = client.login(handle, app_password)
+        new_session = client.export_session_string()
+        token_store.update_tokens(
+            "bluesky", ConnectionResult(access_token=new_session, account_name=handle)
+        )
+        token_store.log_event("bluesky", "token_refreshed", "Session auto-refreshed after expiry.")
         return client
 
     async def validate_connection(self, connection: PlatformConnection) -> bool:
@@ -122,10 +154,9 @@ class BlueskyConnector(BaseConnector):
         """Publish a reply to a Bluesky post. `target` needs the parent's at-uri
         (as `uri` or `post_id`); the cid is resolved live from the thread."""
 
-        def _work() -> dict:
+        def _reply(client) -> dict:
             from atproto import models
 
-            client = self._client(connection)
             uri = self._resolve_uri(client, target)
 
             thread = client.get_post_thread(uri)
@@ -151,7 +182,82 @@ class BlueskyConnector(BaseConnector):
                 "url": f"https://bsky.app/profile/{handle}/post/{rkey}",
             }
 
+        def _work() -> dict:
+            try:
+                return _reply(self._client(connection))
+            except Exception as exc:
+                if self._is_expired_error(exc):
+                    return _reply(self._fresh_client(connection))
+                raise
+
         return await asyncio.to_thread(_work)
+
+    async def create_post(self, connection: PlatformConnection, text: str, media=None) -> dict:
+        """Publish a new standalone Bluesky post, optionally with up to 4 images.
+        Auto-reconnects once if the stored session has expired/been revoked."""
+
+        def _send(client) -> dict:
+            images = list(media or [])[:4]
+            if images:
+                resp = client.send_images(
+                    text=text,
+                    images=[m.data for m in images],
+                    image_alts=[m.alt or "" for m in images],
+                )
+            else:
+                resp = client.send_post(text=text)
+            handle = (connection.metadata or {}).get("handle") or connection.account_name
+            rkey = resp.uri.split("/")[-1]
+            return {
+                "uri": resp.uri,
+                "cid": resp.cid,
+                "url": f"https://bsky.app/profile/{handle}/post/{rkey}",
+            }
+
+        def _work() -> dict:
+            try:
+                return _send(self._client(connection))
+            except Exception as exc:
+                if self._is_expired_error(exc):
+                    return _send(self._fresh_client(connection))
+                raise
+
+        return await asyncio.to_thread(_work)
+
+    async def fetch_replies(self, connection, post_id, exclude_author_id=None):
+        """Direct replies to a Bluesky post (post_id = at-uri)."""
+
+        def _work() -> list[dict]:
+            client = self._client(connection)
+            thread = client.get_post_thread(post_id)
+            node = getattr(thread, "thread", None)
+            out: list[dict] = []
+            for r in getattr(node, "replies", []) or []:
+                post = getattr(r, "post", None)
+                if not post:
+                    continue
+                author = getattr(post, "author", None)
+                did = getattr(author, "did", "") if author else ""
+                if exclude_author_id and did == exclude_author_id:
+                    continue
+                handle = getattr(author, "handle", "") if author else ""
+                rkey = post.uri.split("/")[-1]
+                out.append(
+                    {
+                        "reply_id": post.uri,
+                        "post_url": f"https://bsky.app/profile/{handle}/post/{rkey}",
+                        "author_name": handle,
+                        "author_id": did,
+                        "content": getattr(getattr(post, "record", None), "text", "") or "",
+                        "created_at": getattr(getattr(post, "record", None), "created_at", None),
+                    }
+                )
+            return out
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
 
     # ── Module 3 — community discovery ──────────────────
     async def search_communities(self, keywords: list[str], limit: int = 20):

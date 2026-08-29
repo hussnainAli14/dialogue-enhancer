@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Inbox, RefreshCw } from "lucide-react";
-import { conversationsApi, discoveryApi, draftsApi } from "@/lib/api";
+import { Inbox, MailCheck, RefreshCw } from "lucide-react";
+import { conversationsApi, discoveryApi, draftsApi, postsApi } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
 import { isWithinLast24Hours } from "@/lib/utils";
 import { useConversations } from "@/hooks/useConversations";
@@ -47,6 +47,8 @@ export default function FeedPage() {
   const [postedToday, setPostedToday] = useState(0);
   const [discoveredToday, setDiscoveredToday] = useState(0);
   const [triggering, setTriggering] = useState(false);
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [pollingReplies, setPollingReplies] = useState(false);
 
   const loadDiscoveredToday = useCallback(async () => {
     try {
@@ -78,17 +80,33 @@ export default function FeedPage() {
     }
   };
 
-  const reviewable = useMemo(
+  // Replies to your own posts — surfaced (starred) even before they are drafted.
+  const replies = useMemo(
+    () =>
+      (data?.conversations ?? [])
+        .filter((c) => c.is_reply_to_me && !c.has_posted_reply && !dismissed.has(c.id))
+        .sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at)),
+    [data, dismissed]
+  );
+
+  const discoveryReviewable = useMemo(
     () =>
       (data?.conversations ?? [])
         .filter(
           (c) =>
+            !c.is_reply_to_me &&
             c.analysis_status === "analysed" &&
             c.draft_count > 0 &&
             !dismissed.has(c.id)
         )
         .sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0)),
     [data, dismissed]
+  );
+
+  // Replies always sit at the top of the feed.
+  const reviewable = useMemo(
+    () => [...replies, ...discoveryReviewable],
+    [replies, discoveryReviewable]
   );
 
   const todayCount = useMemo(
@@ -163,6 +181,36 @@ export default function FeedPage() {
     }
   };
 
+  const handleDraft = async (id: string) => {
+    setDraftingId(id);
+    try {
+      await conversationsApi.generateDrafts(id);
+      showToast("info", "Drafting a response… it will appear here shortly.");
+      setTimeout(() => refetch(), 3000);
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not start drafting");
+    } finally {
+      setDraftingId(null);
+    }
+  };
+
+  const handlePollReplies = async () => {
+    setPollingReplies(true);
+    try {
+      const res = await postsApi.pollReplies();
+      if (res.new_replies > 0) {
+        showToast("success", `Found ${res.new_replies} new repl${res.new_replies === 1 ? "y" : "ies"}.`);
+        refetch();
+      } else {
+        showToast("info", "No new replies to your posts.");
+      }
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Reply check failed");
+    } finally {
+      setPollingReplies(false);
+    }
+  };
+
   const totalPages = Math.max(1, Math.ceil(reviewable.length / PAGE_SIZE));
   const pageItems = reviewable.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -192,6 +240,19 @@ export default function FeedPage() {
             <p className="text-xs text-text-muted">{s.label}</p>
           </div>
         ))}
+        <div className="relative rounded-xl border border-amber-400/40 bg-surface p-4 text-center">
+          <button
+            onClick={handlePollReplies}
+            disabled={pollingReplies}
+            title="Check for new replies to your posts"
+            className="absolute right-2 top-2 text-text-muted transition-colors hover:text-amber-400 disabled:opacity-50"
+            aria-label="Check for new replies"
+          >
+            <MailCheck className={pollingReplies ? "h-4 w-4 animate-pulse" : "h-4 w-4"} />
+          </button>
+          <p className="text-2xl font-semibold text-amber-400">{replies.length}</p>
+          <p className="text-xs text-text-muted">Replies to you</p>
+        </div>
         <div className="relative rounded-xl border border-border bg-surface p-4 text-center">
           <button
             onClick={triggerDiscovery}
@@ -247,6 +308,8 @@ export default function FeedPage() {
               conversation={c}
               onDismiss={() => handleDismiss(c)}
               dismissing={dismissingId === c.id}
+              onDraftRequested={handleDraft}
+              drafting={draftingId === c.id}
             />
           ))
         )}

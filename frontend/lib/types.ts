@@ -44,7 +44,12 @@ export interface KnowledgeListResponse extends KnowledgeStats {
   documents: Document[];
 }
 
-export type AnalysisStatus = "pending" | "analysed" | "skipped" | "error";
+export type AnalysisStatus =
+  | "pending"
+  | "analysed"
+  | "skipped"
+  | "error"
+  | "reply_pending";
 
 export interface Conversation {
   id: string;
@@ -59,6 +64,9 @@ export interface Conversation {
   draft_count: number;
   relevance_score: number | null;
   has_posted_reply?: boolean;
+  source?: string;
+  is_reply_to_me?: boolean;
+  parent_post_url?: string | null;
 }
 
 export interface ConversationAnalysis {

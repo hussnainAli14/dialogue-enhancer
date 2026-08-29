@@ -12,6 +12,9 @@ from app.services.connections.factory import get_connector
 # Platforms with a working post_reply / post_exists implementation.
 SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord"}
 
+# Platforms with a working create_post (standalone post) implementation.
+SUPPORTED_STANDALONE = {"bluesky", "mastodon"}
+
 # Hard per-post character limits.
 PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500, "reddit": 10000, "discord": 2000}
 
@@ -225,6 +228,45 @@ async def scan_deleted(dry_run: bool = True, state: dict | None = None) -> dict:
     }
 
 
+async def publish_post(platform: str, text: str, media: list | None = None) -> dict:
+    """Publish a new standalone post (author's own thought + optional images) to
+    `platform`. Raises ValueError with a clear message on any problem."""
+    if platform not in SUPPORTED_STANDALONE:
+        raise ValueError(
+            f"Standalone posting is not supported for {platform}. "
+            f"Currently supported: {', '.join(sorted(SUPPORTED_STANDALONE))}."
+        )
+
+    text = (text or "").strip()
+    if not text and not media:
+        raise ValueError("A post needs text or at least one image.")
+
+    connection = token_store.get_connection(platform)
+    if not connection or connection.status != "connected":
+        raise ValueError(f"{platform} is not connected. Connect it in Settings first.")
+
+    limit = PLATFORM_CHAR_LIMITS.get(platform)
+    if limit and len(text) > limit:
+        raise ValueError(
+            f"This post is {len(text)} characters but {platform}'s limit is {limit}. "
+            f"Shorten it and try again."
+        )
+
+    connector = get_connector(platform)
+    try:
+        result = await connector.create_post(connection, text=text, media=media or [])
+        token_store.mark_used(platform)
+        from app.services import replies
+        replies.record_authored_post(platform, result, text, is_reply=False)
+        token_store.log_event(platform, "fetch_success", "Standalone post published.")
+        log_task("generation", None, "completed", f"Published standalone post to {platform}.")
+        return result
+    except Exception as exc:
+        token_store.log_event(platform, "fetch_failed", f"Standalone post failed: {exc}")
+        log_task("generation", None, "failed", f"Standalone post to {platform} failed: {exc}")
+        raise ValueError(str(exc)) from exc
+
+
 async def publish_reply(conversation_id: str, text: str) -> dict:
     """Post `text` as a reply to the conversation's original post. Returns the
     platform result (url/id). Raises ValueError with a clear message on any
@@ -266,6 +308,9 @@ async def publish_reply(conversation_id: str, text: str) -> dict:
     try:
         result = await connector.post_reply(connection, text=text, target=target)
         token_store.mark_used(platform)
+        if platform in {"bluesky", "mastodon"}:
+            from app.services import replies
+            replies.record_authored_post(platform, result, text, is_reply=True)
         token_store.log_event(platform, "fetch_success", "Reply posted.", {"conversation_id": conversation_id})
         log_task("generation", conversation_id, "completed", f"Posted reply to {platform}.")
         return result

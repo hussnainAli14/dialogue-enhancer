@@ -116,6 +116,11 @@ export const conversationsApi = {
       reason?: string;
     }>(client.get(`/conversations/${id}/source-status`)),
 
+  generateDrafts: (id: string) =>
+    unwrap<{ conversation_id: string; status: string }>(
+      client.post(`/conversations/${id}/generate-drafts`)
+    ),
+
   deleteConversation: (id: string) =>
     unwrap<{ deleted: boolean; conversation_id: string }>(
       client.delete(`/conversations/${id}`)
@@ -190,6 +195,48 @@ export const draftsApi = {
     page?: number;
     page_size?: number;
   } = {}) => unwrap<DraftListResponse>(client.get("/drafts", { params })),
+};
+
+export interface PostTarget {
+  platform: string;
+  connected: boolean;
+  char_limit: number | null;
+}
+
+export interface PostResult {
+  platform: string;
+  success: boolean;
+  result?: { url?: string; id?: string };
+  error?: string;
+}
+
+export const postsApi = {
+  getTargets: () =>
+    unwrap<{ targets: PostTarget[] }>(client.get("/posts/targets")),
+
+  pollReplies: () =>
+    unwrap<{ checked: number; new_replies: number; skipped?: string }>(
+      client.post("/posts/poll-replies")
+    ),
+
+  createPost: (
+    platforms: string[],
+    text: string,
+    images: { file: File; alt: string }[] = []
+  ) => {
+    const form = new FormData();
+    for (const p of platforms) form.append("platforms", p);
+    form.append("text", text);
+    for (const img of images) {
+      form.append("images", img.file);
+      form.append("alts", img.alt);
+    }
+    return unwrap<{ results: PostResult[]; posted: number; total: number }>(
+      client.post("/posts", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+    );
+  },
 };
 
 export const connectionsApi = {

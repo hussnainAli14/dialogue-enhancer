@@ -123,6 +123,55 @@ class MastodonConnector(BaseConnector):
 
         return await asyncio.to_thread(_work)
 
+    async def create_post(self, connection: PlatformConnection, text: str, media=None) -> dict:
+        """Publish a new standalone Mastodon status, optionally with up to 4 images."""
+
+        def _work() -> dict:
+            mastodon = self._client(connection)
+            media_ids = []
+            for m in list(media or [])[:4]:
+                uploaded = mastodon.media_post(
+                    m.data, mime_type=m.content_type, description=m.alt or None
+                )
+                media_ids.append(uploaded["id"])
+            status = mastodon.status_post(
+                text, media_ids=media_ids or None, visibility="public"
+            )
+            return {"id": str(status["id"]), "url": status.get("url")}
+
+        return await asyncio.to_thread(_work)
+
+    async def fetch_replies(self, connection, post_id, exclude_author_id=None):
+        """Direct replies to a Mastodon status (post_id = status id)."""
+
+        def _work() -> list[dict]:
+            mastodon = self._client(connection)
+            context = mastodon.status_context(post_id)
+            out: list[dict] = []
+            for s in context.get("descendants", []) or []:
+                if str(s.get("in_reply_to_id")) != str(post_id):
+                    continue  # only direct replies to our post
+                account = s.get("account", {})
+                aid = str(account.get("id", ""))
+                if exclude_author_id and aid == exclude_author_id:
+                    continue
+                out.append(
+                    {
+                        "reply_id": str(s["id"]),
+                        "post_url": s.get("url", ""),
+                        "author_name": f"@{account.get('username', '')}",
+                        "author_id": aid,
+                        "content": _strip_html(s.get("content", "")),
+                        "created_at": s.get("created_at"),
+                    }
+                )
+            return out
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return []
+
     # ── Module 3 — community discovery ──────────────────
     async def search_communities(self, keywords: list[str], limit: int = 20):
         from app.services import token_store

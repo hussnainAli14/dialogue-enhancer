@@ -107,7 +107,7 @@ export default function ConversationDetailPage() {
       ),
   };
 
-  const canPost = ["bluesky", "mastodon", "reddit", "discord"].includes(
+  const canPost = ["bluesky", "mastodon", "reddit", "discord", "threads", "youtube"].includes(
     data?.platform ?? ""
   );
 

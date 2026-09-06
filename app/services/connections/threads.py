@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -124,14 +125,30 @@ class ThreadsConnector(BaseConnector):
             if reply_to_id:
                 create_params["reply_to_id"] = reply_to_id
             created = await http.post(f"{GRAPH}/v1.0/{uid}/threads", data=create_params)
-            created.raise_for_status()
+            _raise_threads(created)
             creation_id = created.json()["id"]
+
+            # Threads processes the container asynchronously — publishing before it
+            # reaches FINISHED returns a 400. Poll status briefly, then publish.
+            for _ in range(10):
+                status_res = await http.get(
+                    f"{GRAPH}/v1.0/{creation_id}",
+                    params={"fields": "status,error_message", "access_token": token},
+                )
+                status = status_res.json().get("status") if status_res.status_code == 200 else None
+                if status == "FINISHED":
+                    break
+                if status == "ERROR":
+                    raise ValueError(
+                        f"Threads container error: {status_res.json().get('error_message', 'unknown')}"
+                    )
+                await asyncio.sleep(2)
 
             published = await http.post(
                 f"{GRAPH}/v1.0/{uid}/threads_publish",
                 data={"creation_id": creation_id, "access_token": token},
             )
-            published.raise_for_status()
+            _raise_threads(published)
             media_id = str(published.json()["id"])
 
             url = None
@@ -272,6 +289,18 @@ class ThreadsConnector(BaseConnector):
                     if len(posts) >= limit:
                         return posts
         return posts
+
+
+def _raise_threads(res: httpx.Response) -> None:
+    """Raise with the Threads API error message instead of httpx's generic text."""
+    if res.is_success:
+        return
+    try:
+        err = res.json().get("error", {})
+        msg = err.get("message") or err.get("error_user_msg") or res.text
+    except Exception:
+        msg = res.text
+    raise ValueError(f"Threads API {res.status_code}: {msg}")
 
 
 def _parse_dt(value: str | None) -> datetime:

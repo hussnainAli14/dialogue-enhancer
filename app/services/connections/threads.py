@@ -255,8 +255,10 @@ class ThreadsConnector(BaseConnector):
                 res = await http.get(
                     f"{GRAPH}/v1.0/keyword_search",
                     params={
+                        # RECENT (not TOP) so fresh posts fall inside the `since`
+                        # window; TOP returns historically-popular, often-old posts.
                         "q": keyword,
-                        "search_type": "TOP",
+                        "search_type": "RECENT",
                         "fields": "id,text,username,permalink,timestamp,replies_count,likes_count",
                         "access_token": connection.access_token,
                     },

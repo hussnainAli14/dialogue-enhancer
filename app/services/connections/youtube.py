@@ -10,7 +10,11 @@ from app.schemas.connections import ConnectionResult, PlatformConnection
 from app.services.connections.base import BaseConnector, UniversalPost
 from app.services.token_store import log_event
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.readonly",
+    # force-ssl is required to insert comments (post replies on videos).
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 QUOTA_DAILY = 10000
 QUOTA_STOP_THRESHOLD = 500  # stop fetching when fewer than this many units likely remain
 
@@ -123,6 +127,49 @@ class YouTubeConnector(BaseConnector):
         def _work() -> bool:
             yt = self._youtube(self._credentials(connection))
             res = yt.channels().list(part="id", mine=True).execute()
+            return bool(res.get("items"))
+
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception:
+            return False
+
+    # ── Posting — comment on a video ────────────────────
+    async def post_reply(self, connection: PlatformConnection, target: dict, text: str) -> dict:
+        """Publish a top-level comment on a YouTube video. `target` needs the
+        video id (as `id` or `post_id`). Returns {id, url}."""
+        video_id = target.get("id") or target.get("post_id")
+        if not video_id:
+            raise ValueError("Missing YouTube video id to comment on.")
+
+        def _work() -> dict:
+            yt = self._youtube(self._credentials(connection))
+            res = yt.commentThreads().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": video_id,
+                        "topLevelComment": {"snippet": {"textOriginal": text}},
+                    }
+                },
+            ).execute()
+            comment_id = res.get("id", "")
+            return {
+                "id": comment_id,
+                "url": f"https://youtube.com/watch?v={video_id}&lc={comment_id}",
+            }
+
+        return await asyncio.to_thread(_work)
+
+    async def post_exists(self, connection: PlatformConnection, target: dict) -> bool:
+        """True if the YouTube video is still retrievable."""
+        video_id = target.get("id") or target.get("post_id")
+        if not video_id:
+            return False
+
+        def _work() -> bool:
+            yt = self._youtube(self._credentials(connection))
+            res = yt.videos().list(part="id", id=video_id).execute()
             return bool(res.get("items"))
 
         try:

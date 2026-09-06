@@ -37,32 +37,6 @@ def _frontend_redirect(platform: str, ok_flag: bool, message: str = "") -> Redir
     return RedirectResponse(url)
 
 
-@router.get("/threads/debug-search")
-async def threads_debug_search(q: str = "personal development", search_type: str = "RECENT"):
-    """TEMP diagnostic: run a raw Threads keyword_search with the stored token and
-    return the API status + body verbatim. Remove after debugging."""
-    import httpx
-
-    conn = token_store.get_connection("threads")
-    if not conn or conn.status != "connected":
-        return fail("Threads not connected", 400)
-    try:
-        async with httpx.AsyncClient(timeout=30) as http:
-            res = await http.get(
-                "https://graph.threads.net/v1.0/keyword_search",
-                params={
-                    "q": q,
-                    "search_type": search_type,
-                    "fields": "id,text,username,permalink,timestamp,replies_count,likes_count",
-                    "access_token": conn.access_token,
-                },
-            )
-        body = res.json() if res.headers.get("content-type", "").startswith("application/json") else res.text
-        return ok({"status_code": res.status_code, "body": body})
-    except Exception as exc:
-        return fail(f"debug-search error: {exc}", 500)
-
-
 @router.get("/status")
 async def status():
     try:

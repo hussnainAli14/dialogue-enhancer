@@ -19,6 +19,7 @@ SCOPES = [
     "threads_read_replies",
     "threads_content_publish",
     "threads_manage_replies",
+    "threads_keyword_search",
 ]
 
 

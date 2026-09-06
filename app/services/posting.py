@@ -10,13 +10,19 @@ from app.services import token_store
 from app.services.connections.factory import get_connector
 
 # Platforms with a working post_reply / post_exists implementation.
-SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord"}
+SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord", "threads"}
 
 # Platforms with a working create_post (standalone post) implementation.
-SUPPORTED_STANDALONE = {"bluesky", "mastodon"}
+SUPPORTED_STANDALONE = {"bluesky", "mastodon", "threads"}
 
 # Hard per-post character limits.
-PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500, "reddit": 10000, "discord": 2000}
+PLATFORM_CHAR_LIMITS = {
+    "bluesky": 300,
+    "mastodon": 500,
+    "reddit": 10000,
+    "discord": 2000,
+    "threads": 500,
+}
 
 
 def _resolve_target(supabase, conversation_id: str, conv: dict) -> dict:

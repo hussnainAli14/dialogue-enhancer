@@ -13,7 +13,12 @@ from app.services.connections.base import BaseConnector, UniversalPost
 
 AUTH = "https://threads.net/oauth/authorize"
 GRAPH = "https://graph.threads.net"
-SCOPES = ["threads_basic", "threads_read_replies"]
+SCOPES = [
+    "threads_basic",
+    "threads_read_replies",
+    "threads_content_publish",
+    "threads_manage_replies",
+]
 
 
 class ThreadsConnector(BaseConnector):
@@ -101,6 +106,74 @@ class ThreadsConnector(BaseConnector):
             async with httpx.AsyncClient(timeout=15) as http:
                 res = await http.get(
                     f"{GRAPH}/v1.0/me",
+                    params={"fields": "id", "access_token": connection.access_token},
+                )
+                return res.status_code == 200
+        except Exception:
+            return False
+
+    async def _publish(self, connection: PlatformConnection, text: str, reply_to_id: str | None = None) -> dict:
+        """Threads' two-step publish: create a text container, then publish it.
+        Returns {id, url}."""
+        uid = connection.account_id
+        token = connection.access_token
+        if not uid:
+            raise ValueError("Missing Threads user id — reconnect Threads.")
+        async with httpx.AsyncClient(timeout=30) as http:
+            create_params = {"media_type": "TEXT", "text": text, "access_token": token}
+            if reply_to_id:
+                create_params["reply_to_id"] = reply_to_id
+            created = await http.post(f"{GRAPH}/v1.0/{uid}/threads", data=create_params)
+            created.raise_for_status()
+            creation_id = created.json()["id"]
+
+            published = await http.post(
+                f"{GRAPH}/v1.0/{uid}/threads_publish",
+                data={"creation_id": creation_id, "access_token": token},
+            )
+            published.raise_for_status()
+            media_id = str(published.json()["id"])
+
+            url = None
+            try:
+                meta = await http.get(
+                    f"{GRAPH}/v1.0/{media_id}",
+                    params={"fields": "permalink", "access_token": token},
+                )
+                if meta.status_code == 200:
+                    url = meta.json().get("permalink")
+            except Exception:
+                pass
+        return {"id": media_id, "url": url}
+
+    async def create_post(self, connection: PlatformConnection, text: str, media=None) -> dict:
+        """Publish a new standalone Threads post. Text only for now — Threads
+        image publishing needs a publicly hosted image URL, which the app does
+        not provide yet."""
+        if media:
+            raise ValueError(
+                "Threads image posting isn't supported yet (Threads requires a public "
+                "image URL). Post text only for now."
+            )
+        return await self._publish(connection, text)
+
+    async def post_reply(self, connection: PlatformConnection, target: dict, text: str) -> dict:
+        """Publish a reply to a Threads post. `target` needs the post id (as
+        `id` or `post_id`)."""
+        reply_to_id = target.get("id") or target.get("post_id")
+        if not reply_to_id:
+            raise ValueError("Missing Threads post id to reply to.")
+        return await self._publish(connection, text, reply_to_id=reply_to_id)
+
+    async def post_exists(self, connection: PlatformConnection, target: dict) -> bool:
+        """True if the Threads post is still retrievable."""
+        post_id = target.get("id") or target.get("post_id")
+        if not post_id:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                res = await http.get(
+                    f"{GRAPH}/v1.0/{post_id}",
                     params={"fields": "id", "access_token": connection.access_token},
                 )
                 return res.status_code == 200

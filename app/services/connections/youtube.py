@@ -27,7 +27,13 @@ def _flow():
             "redirect_uris": [settings.YOUTUBE_REDIRECT_URI],
         }
     }
-    flow = Flow.from_client_config(client_config, scopes=SCOPES)
+    # PKCE is disabled: get_auth_url and exchange_code run as two independent,
+    # stateless calls that each build a fresh Flow, so the code_verifier from the
+    # auth step can't be carried to the token exchange. With PKCE on, Google would
+    # reject the exchange ("execution failed").
+    flow = Flow.from_client_config(
+        client_config, scopes=SCOPES, autogenerate_code_verifier=False
+    )
     flow.redirect_uri = settings.YOUTUBE_REDIRECT_URI
     return flow
 

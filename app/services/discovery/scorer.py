@@ -10,18 +10,20 @@ from app.models.discovery import DiscoverySettings, ScoredPost
 from app.services.connections.base import UniversalPost
 from app.services.retrieval import call_llm_with_retry, extract_json
 
-SCORING_PROMPT = """You are helping a coach and author with fifteen years of experience in \
-coaching, leadership, personal growth, spirituality, and community building decide which \
-online conversations are worth their time.
+SCORING_PROMPT = """You are helping the following author decide which online conversations \
+are worth their time.
+
+AUTHOR PROFILE:
+{profile}
 
 The author only wants to join conversations where they can make a GENUINELY VALUABLE \
-contribution — not just any conversation that mentions these topics.
+contribution — not just any conversation that mentions their topics.
 
 Score each post from 0.0 to 1.0 on four criteria, then return the weighted average as \
 final_score:
 
-- topic_relevance (weight 0.35): how closely the post relates to coaching, leadership, \
-personal growth, spirituality, or community. 0 = off-topic, 1 = directly on topic.
+- topic_relevance (weight 0.35): how closely the post relates to the author's areas of \
+focus described in the profile above. 0 = off-topic, 1 = directly on topic.
 - contribution_opportunity (weight 0.35): how much genuine value the author could add. \
 0 = saturated / needs no input, 1 = a clear gap the author could fill.
 - discussion_quality (weight 0.20): how thoughtful and substantive it is. 0 = superficial, \
@@ -87,7 +89,12 @@ class Scorer:
     async def score_single_batch(self, posts: list[UniversalPost]) -> list[ScoredPost]:
         if not posts:
             return []
-        prompt = SCORING_PROMPT.format(posts="\n".join(_format_post(p) for p in posts))
+        from app.services.author_profile import get_author_profile
+
+        profile = await get_author_profile()
+        prompt = SCORING_PROMPT.format(
+            profile=profile, posts="\n".join(_format_post(p) for p in posts)
+        )
         data = None
         try:
             async with asyncio.timeout(BATCH_TIMEOUT_SECONDS):

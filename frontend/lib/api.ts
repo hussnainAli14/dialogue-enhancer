@@ -12,6 +12,7 @@ import type {
   CommunitySuggestion,
   DiscoveredPost,
   DiscoveryRun,
+  DiscoveryKeyword,
   DiscoverySettings,
   DiscoveryStatus,
   DiscoveryTopic,
@@ -340,6 +341,29 @@ export const discoveryApi = {
 
   updateSettings: (data: Partial<DiscoverySettings>) =>
     unwrap<DiscoverySettings>(client.post("/discovery/settings", data)),
+
+  // Keywords (knowledge-base derived + manual)
+  getKeywords: () =>
+    unwrap<{
+      keywords: DiscoveryKeyword[];
+      total: number;
+      active_count: number;
+      search_cap: number;
+    }>(client.get("/discovery/keywords")),
+
+  addKeyword: (keyword: string) =>
+    unwrap<{ keyword: DiscoveryKeyword }>(client.post("/discovery/keywords", { keyword })),
+
+  updateKeyword: (id: string, is_active: boolean) =>
+    unwrap<{ keyword: DiscoveryKeyword }>(
+      client.patch(`/discovery/keywords/${id}`, { is_active })
+    ),
+
+  deleteKeyword: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/discovery/keywords/${id}`)),
+
+  rescanKeywords: () =>
+    unwrap<{ status: string }>(client.post("/discovery/keywords/rescan")),
 };
 
 export const communityApi = {

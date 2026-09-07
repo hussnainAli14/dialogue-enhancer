@@ -289,6 +289,17 @@ export interface MonitoredCommunity {
   post_count: number;
 }
 
+export interface DiscoveryKeyword {
+  id: string;
+  keyword: string;
+  normalized: string;
+  source: "kb" | "manual";
+  is_active: boolean;
+  document_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DiscoverySettings {
   is_enabled: boolean;
   schedule_interval_minutes: number;
@@ -296,6 +307,8 @@ export interface DiscoverySettings {
   max_conversations_per_day: number;
   min_relevance_score: number;
   scoring_batch_size: number;
+  keyword_search_cap?: number;
+  kb_overlap_weight?: number;
   // Module 3 — community discovery
   community_discovery_enabled?: boolean;
   community_schedule_hours?: number;

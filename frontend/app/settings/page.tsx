@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/useToast";
 import ConnectionsSection from "@/components/settings/ConnectionsSection";
 import DiscoverySettingsSection from "@/components/settings/DiscoverySettingsSection";
 import CommunityDiscoverySettingsSection from "@/components/settings/CommunityDiscoverySettingsSection";
+import KeywordsSection from "@/components/settings/KeywordsSection";
 import { PLATFORM_LABELS } from "@/lib/constants";
 
 const STORAGE_KEY = "dialogue-enhancer-settings";
@@ -68,6 +69,8 @@ export default function SettingsPage() {
       <ConnectionsSection />
 
       <DiscoverySettingsSection />
+
+      <KeywordsSection />
 
       <CommunityDiscoverySettingsSection />
 

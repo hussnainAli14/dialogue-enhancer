@@ -21,7 +21,7 @@ import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 import EmptyState from "@/components/shared/EmptyState";
 
-const TABS = ["Overview", "Posts", "Communities", "Run History"] as const;
+const TABS = ["Overview", "Posts", "Run History"] as const;
 type Tab = (typeof TABS)[number];
 
 const RUN_STATUS_STYLES: Record<string, string> = {
@@ -69,7 +69,6 @@ export default function DiscoveryPage() {
       </div>
       {tab === "Overview" && <OverviewTab />}
       {tab === "Posts" && <PostsTab />}
-      {tab === "Communities" && <CommunitiesTab />}
       {tab === "Run History" && <RunHistoryTab />}
     </div>
   );
@@ -215,7 +214,6 @@ function OverviewTab() {
         <Stat label="Scheduler" value={status.scheduler_running ? "Running" : "Stopped"} />
         <Stat label="Status" value={status.is_enabled ? "Enabled" : "Paused"} />
         <Stat label="Submitted today" value={`${status.today_submitted} / ${status.today_limit}`} />
-        <Stat label="Communities" value={String(status.monitored_communities)} />
         <Stat label="Interval" value={`${status.schedule_interval_minutes} min`} />
         <Stat
           label="Next run"

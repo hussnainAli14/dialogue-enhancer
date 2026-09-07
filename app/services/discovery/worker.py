@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.database import get_supabase, log_task
 from app.models.discovery import DiscoveryRunResult
+from app.schemas.connections import PLATFORMS
 from app.services import token_store
 from app.services.connections.base import UniversalPost
 from app.services.connections.factory import PlatformFetchService
@@ -73,38 +74,44 @@ class DiscoveryWorker:
                 )
             log_task("analysis", run_id, "started", f"Discovery run ({trigger_type})")
 
-            # STEP 2 — communities
-            communities = store.active_communities()
-            if not communities:
-                return self._finish(
-                    run_id, result, "completed", started,
-                    "No active communities configured. Add some to start discovering.",
-                )
-            grouped: dict[str, list[str]] = {}
-            all_keywords: set[str] = set()
-            since_candidates: list[datetime] = []
-            for c in communities:
-                grouped.setdefault(c["platform"], []).append(c["community_id"])
-                all_keywords.update(c.get("keywords") or [])
-                if c.get("last_fetched_at"):
-                    since_candidates.append(_parse(c["last_fetched_at"]))
+            # STEP 2 — keywords (from the knowledge base + manual) and any
+            # approved communities (searched directly, in addition to keywords).
+            keywords = store.active_keywords()
 
-            # Only keep platforms that are actually connected.
             connected = {
-                c.platform for c in token_store.get_all_connections() if c.status == "connected"
+                c.platform
+                for c in token_store.get_all_connections()
+                if c.status == "connected" and c.platform in PLATFORMS
             }
-            grouped = {p: ids for p, ids in grouped.items() if p in connected}
-            result.platforms_checked = list(grouped.keys())
-            if not grouped:
+
+            # Approved communities add per-platform targets plus their own keywords.
+            communities = store.active_communities()
+            grouped: dict[str, list[str]] = {}
+            comm_keywords: set[str] = set()
+            for c in communities:
+                if c.get("platform") in connected:
+                    grouped.setdefault(c["platform"], []).append(c["community_id"])
+                    comm_keywords.update(c.get("keywords") or [])
+
+            search_keywords = list(dict.fromkeys([*keywords, *comm_keywords]))
+            if not search_keywords and not grouped:
                 return self._finish(
                     run_id, result, "completed", started,
-                    "No connected platforms among configured communities.",
+                    "No discovery keywords or communities yet. Add files to your "
+                    "knowledge base, add keywords, or approve a community.",
+                )
+
+            result.platforms_checked = list(connected)
+            if not connected:
+                return self._finish(
+                    run_id, result, "completed", started,
+                    "No connected platforms to search.",
                 )
 
             # STEP 3 — fetch
-            since = min(since_candidates) if since_candidates else _now() - timedelta(hours=24)
+            since = _now() - timedelta(hours=24)
             posts = await self.fetcher.fetch_from_all_platforms(
-                keywords=list(all_keywords),
+                keywords=search_keywords,
                 communities=grouped,
                 since=since,
                 limit_per_platform=settings.max_posts_per_run,

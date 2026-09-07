@@ -26,6 +26,12 @@ def get_settings() -> DiscoverySettings:
                 max_conversations_per_day=r.get("max_conversations_per_day", 5),
                 min_relevance_score=r.get("min_relevance_score", 0.65),
                 scoring_batch_size=r.get("scoring_batch_size", 10),
+                keyword_search_cap=r.get("keyword_search_cap") or 30,
+                kb_overlap_weight=(
+                    r.get("kb_overlap_weight")
+                    if r.get("kb_overlap_weight") is not None
+                    else 0.25
+                ),
             )
     except Exception:
         pass
@@ -68,6 +74,30 @@ def daily_conversation_count() -> int:
         return res.count or 0
     except Exception:
         return 0
+
+
+# Default max active keywords searched per run when unset — caps API/quota cost.
+# The live value comes from discovery_settings.keyword_search_cap.
+KEYWORD_SEARCH_CAP = 30
+
+
+def active_keywords(limit: int | None = None) -> list[str]:
+    """Active discovery keywords (KB-derived + manual), oldest first, capped."""
+    if limit is None:
+        limit = get_settings().keyword_search_cap
+    try:
+        rows = (
+            get_supabase()
+            .table("discovery_keywords")
+            .select("keyword")
+            .eq("is_active", True)
+            .order("created_at")
+            .limit(limit)
+            .execute()
+        ).data or []
+        return [r["keyword"] for r in rows if r.get("keyword")]
+    except Exception:
+        return []
 
 
 def active_communities() -> list[dict]:

@@ -53,6 +53,9 @@ Return ONLY valid JSON, no other text:
 
 RETRY_SUFFIX = "\n\nReturn ONLY the JSON object. No prose, no markdown fences."
 
+# Weight of knowledge-base overlap when blended into the final relevance score.
+KB_OVERLAP_WEIGHT = 0.25
+
 # Hard ceiling per batch so a slow/hung local LLM can never stall the worker.
 BATCH_TIMEOUT_SECONDS = 120
 
@@ -81,12 +84,15 @@ class Scorer:
     ) -> list[ScoredPost]:
         results: list[ScoredPost] = []
         size = max(1, settings.scoring_batch_size)
+        weight = getattr(settings, "kb_overlap_weight", KB_OVERLAP_WEIGHT)
         for i in range(0, len(posts), size):
             batch = posts[i : i + size]
-            results.extend(await self.score_single_batch(batch))
+            results.extend(await self.score_single_batch(batch, kb_weight=weight))
         return results
 
-    async def score_single_batch(self, posts: list[UniversalPost]) -> list[ScoredPost]:
+    async def score_single_batch(
+        self, posts: list[UniversalPost], kb_weight: float = KB_OVERLAP_WEIGHT
+    ) -> list[ScoredPost]:
         if not posts:
             return []
         from app.services.author_profile import get_author_profile
@@ -127,7 +133,54 @@ class Scorer:
                     reasoning=str(s.get("reasoning", ""))[:1000],
                 )
             )
+
+        # Blend in how well each post overlaps the knowledge base — a boost for
+        # topics the author has actually written about. Skipped entirely when the
+        # knowledge base is empty, so it never penalises.
+        overlaps = await self._kb_overlap(posts) if kb_weight > 0 else {}
+        if overlaps:
+            for sp in scored:
+                ov = overlaps.get(_key(sp.post))
+                if ov is None:
+                    continue
+                blended = sp.final_score * (1 - kb_weight) + ov * kb_weight
+                sp.final_score = round(blended, 4)
+
         return scored
+
+    async def _kb_overlap(self, posts: list[UniversalPost]) -> dict[str, float]:
+        """Max cosine similarity of each post against the knowledge base, keyed by
+        post. Returns {} when the knowledge base is empty (so no blending happens)."""
+        from app.config import get_embeddings
+        from app.database import get_supabase
+
+        supabase = get_supabase()
+        try:
+            docs = supabase.table("documents").select("id", count="exact").limit(1).execute()
+            if not (docs.count or 0):
+                return {}
+        except Exception:
+            return {}
+
+        out: dict[str, float] = {}
+        try:
+            embeddings = get_embeddings()
+            texts = [f"{p.title or ''} {p.content or ''}".strip()[:1000] for p in posts]
+            vectors = await embeddings.aembed_documents(texts)
+        except Exception:
+            return {}
+
+        for p, vec in zip(posts, vectors):
+            try:
+                res = supabase.rpc(
+                    "match_documents",
+                    {"query_embedding": vec, "match_threshold": 0.0, "match_count": 1},
+                ).execute()
+                rows = res.data or []
+                out[_key(p)] = float(rows[0]["similarity"]) if rows else 0.0
+            except Exception:
+                out[_key(p)] = 0.0
+        return out
 
     async def score_single(self, post: UniversalPost) -> ScoredPost:
         results = await self.score_single_batch([post])

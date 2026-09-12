@@ -1,15 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, ImagePlus, Loader2, X, XCircle } from "lucide-react";
-import { postsApi, type PostResult, type PostTarget } from "@/lib/api";
-import { PLATFORM_LABELS } from "@/lib/constants";
+import {
+  CheckCircle2,
+  ExternalLink,
+  ImagePlus,
+  Loader2,
+  Sparkles,
+  X,
+  XCircle,
+} from "lucide-react";
+import {
+  postsApi,
+  type ComposeCandidate,
+  type PostResult,
+  type PostTarget,
+} from "@/lib/api";
+import { PLATFORM_LABELS, STYLE_LABELS } from "@/lib/constants";
 import { useToast } from "@/hooks/useToast";
 import Button from "@/components/shared/Button";
 import Textarea from "@/components/shared/Textarea";
 import { cn } from "@/lib/utils";
 
 const MAX_IMAGES = 4;
+
+const SEED_FIELDS = [
+  { key: "thinking", label: "What are you thinking about?" },
+  { key: "example", label: "What real example or experience gives it life?" },
+  { key: "tension", label: "What tension or question feels alive in it?" },
+  { key: "invite", label: "What kind of response do you hope to invite?" },
+] as const;
 
 interface PendingImage {
   file: File;
@@ -27,6 +47,11 @@ export default function ComposePage() {
   const [images, setImages] = useState<PendingImage[]>([]);
   const [posting, setPosting] = useState(false);
   const [results, setResults] = useState<PostResult[] | null>(null);
+
+  // AI drafting from seed thoughts
+  const [seed, setSeed] = useState({ thinking: "", example: "", tension: "", invite: "" });
+  const [candidates, setCandidates] = useState<ComposeCandidate[]>([]);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     postsApi
@@ -98,6 +123,32 @@ export default function ComposePage() {
     (text.trim().length > 0 || images.length > 0) &&
     !posting;
 
+  const canGenerate = Object.values(seed).some((v) => v.trim().length > 0) && !generating;
+
+  const handleGenerate = async () => {
+    if (!canGenerate) return;
+    setGenerating(true);
+    try {
+      const res = await postsApi.composeSuggest({ ...seed, char_limit: effectiveLimit });
+      setCandidates(res.candidates);
+      if (res.candidates.length === 0) {
+        showToast("info", "No suggestions came back — try adding more detail.");
+      }
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not generate suggestions");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const useCandidate = (c: ComposeCandidate) => {
+    setText(c.content);
+    showToast("info", "Loaded into the editor — tweak it, then post.");
+    if (typeof window !== "undefined") {
+      document.getElementById("post-text")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
   const handlePost = async () => {
     if (!canPost) return;
     setPosting(true);
@@ -130,6 +181,61 @@ export default function ComposePage() {
           Publish your own thought — with optional images — to one or more connected
           platforms at once.
         </p>
+      </div>
+
+      {/* Draft with AI from seed thoughts */}
+      <div className="mb-4 rounded-xl border border-border bg-surface p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-accent-light" />
+          <span className="text-sm font-medium text-text-primary">Draft with AI</span>
+        </div>
+        <p className="text-xs text-text-secondary">
+          Answer any of these and generate four candidate posts — Wholistic, Challenging,
+          Insightful, and Facilitative — in your own voice. Pick one to edit and post.
+        </p>
+        {SEED_FIELDS.map((f) => (
+          <Textarea
+            key={f.key}
+            id={`seed-${f.key}`}
+            label={f.label}
+            value={seed[f.key]}
+            onChange={(e) => setSeed((s) => ({ ...s, [f.key]: e.target.value }))}
+            className="min-h-[60px]"
+          />
+        ))}
+        <Button onClick={handleGenerate} disabled={!canGenerate} variant="secondary">
+          {generating ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Generating…
+            </span>
+          ) : (
+            "Generate 4 suggestions"
+          )}
+        </Button>
+
+        {candidates.length > 0 && (
+          <div className="space-y-3 border-t border-border pt-4">
+            {candidates.map((c) => (
+              <div key={c.style} className="rounded-lg border border-border bg-surface-raised p-4">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-accent-light">
+                    {STYLE_LABELS[c.style] ?? c.style}
+                  </span>
+                  <button
+                    onClick={() => useCandidate(c)}
+                    className="text-xs text-accent-light hover:underline"
+                  >
+                    Use this →
+                  </button>
+                </div>
+                <p className="whitespace-pre-wrap text-sm text-text-primary">{c.content}</p>
+                {c.value_explanation && (
+                  <p className="mt-2 text-xs text-text-muted">{c.value_explanation}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-surface p-6 space-y-4">

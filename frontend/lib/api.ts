@@ -211,6 +211,12 @@ export interface PostResult {
   error?: string;
 }
 
+export interface ComposeCandidate {
+  style: string;
+  content: string;
+  value_explanation: string | null;
+}
+
 export const postsApi = {
   getTargets: () =>
     unwrap<{ targets: PostTarget[] }>(client.get("/posts/targets")),
@@ -218,6 +224,17 @@ export const postsApi = {
   pollReplies: () =>
     unwrap<{ checked: number; new_replies: number; skipped?: string }>(
       client.post("/posts/poll-replies")
+    ),
+
+  composeSuggest: (seed: {
+    thinking?: string;
+    example?: string;
+    tension?: string;
+    invite?: string;
+    char_limit?: number | null;
+  }) =>
+    unwrap<{ candidates: ComposeCandidate[] }>(
+      client.post("/posts/compose-suggest", seed)
     ),
 
   createPost: (

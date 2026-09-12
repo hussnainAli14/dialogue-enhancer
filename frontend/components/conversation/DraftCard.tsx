@@ -3,6 +3,8 @@
 import { useState } from "react";
 import {
   AlertTriangle,
+  Check,
+  Copy,
   GitMerge,
   HelpCircle,
   Info,
@@ -30,7 +32,8 @@ export type DraftActionName =
   | "save"
   | "reject"
   | "post"
-  | "unapprove";
+  | "unapprove"
+  | "markPosted";
 
 export interface DraftActions {
   onApprove: (id: string) => void;
@@ -40,12 +43,15 @@ export interface DraftActions {
   onEditAndApprove: (id: string, content: string) => void;
   onReject: (id: string, reason?: string) => void;
   onSave: (id: string) => void;
+  onMarkPosted?: (id: string) => void;
 }
 
 interface DraftCardProps {
   draft: ResponseDraft;
   actions: DraftActions;
   canPost?: boolean;
+  /** Author copies the draft and posts it on the platform themselves. */
+  manualPost?: boolean;
   editOpen?: boolean;
   onOpenEdit?: (id: string | null) => void;
   /** The action currently in flight for this draft, if any. */
@@ -56,6 +62,7 @@ export default function DraftCard({
   draft,
   actions,
   canPost,
+  manualPost,
   editOpen,
   onOpenEdit,
   busyAction = null,
@@ -63,6 +70,18 @@ export default function DraftCard({
   const [editText, setEditText] = useState(draft.content);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const replyText = draft.edited_content ?? draft.content;
+  const copyReply = async () => {
+    try {
+      await navigator.clipboard.writeText(replyText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard may be denied — leave the button as-is */
+    }
+  };
 
   const busy = busyAction !== null;
   const pending = draft.status === "pending";
@@ -152,7 +171,7 @@ export default function DraftCard({
                 >
                   Approve
                 </Button>
-                {canPost && (
+                {canPost && !manualPost && (
                   <Button
                     size="sm"
                     className="bg-accent hover:bg-accent-hover"
@@ -163,6 +182,21 @@ export default function DraftCard({
                     Approve & Post
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  className={
+                    manualPost
+                      ? "bg-accent hover:bg-accent-hover"
+                      : "border border-border-bright bg-surface-raised"
+                  }
+                  disabled={busy}
+                  iconLeft={
+                    copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />
+                  }
+                  onClick={copyReply}
+                >
+                  {copied ? "Copied" : manualPost ? "Copy to post yourself" : "Copy"}
+                </Button>
                 <Button
                   size="sm"
                   loading={busyAction === "edit"}
@@ -237,7 +271,7 @@ export default function DraftCard({
 
           {!pending && revertable && (
             <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
-              {canPost && approvedNotPosted && (
+              {canPost && !manualPost && approvedNotPosted && (
                 <Button
                   size="sm"
                   className="bg-accent hover:bg-accent-hover"
@@ -246,6 +280,30 @@ export default function DraftCard({
                   onClick={() => actions.onPost(draft.id)}
                 >
                   Post Now
+                </Button>
+              )}
+              {manualPost && (
+                <Button
+                  size="sm"
+                  className="bg-accent hover:bg-accent-hover"
+                  disabled={busy}
+                  iconLeft={
+                    copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />
+                  }
+                  onClick={copyReply}
+                >
+                  {copied ? "Copied" : "Copy to post yourself"}
+                </Button>
+              )}
+              {manualPost && approvedNotPosted && actions.onMarkPosted && (
+                <Button
+                  size="sm"
+                  className="bg-success hover:bg-success/80"
+                  loading={busyAction === "markPosted"}
+                  disabled={busy}
+                  onClick={() => actions.onMarkPosted?.(draft.id)}
+                >
+                  Mark as posted
                 </Button>
               )}
               <Button

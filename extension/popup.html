@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dialogue Enhancer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <strong>Clipper</strong>
+      <a href="options.html" target="_blank" rel="noopener">Options</a>
+    </header>
+    <p class="lede">
+      Sends only the post you pick. Does not scroll, search, or publish.
+    </p>
+    <p id="status" class="status">Looking at this tab…</p>
+    <div id="list"></div>
+    <p id="hint" class="hint hidden">
+      If the text is cut off, expand “see more” on the post first, then open this again.
+    </p>
+    <script src="extract.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

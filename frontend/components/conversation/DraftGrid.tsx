@@ -8,11 +8,13 @@ export default function DraftGrid({
   drafts,
   actions,
   canPost = false,
+  manualPost = false,
   busy = null,
 }: {
   drafts: ResponseDraft[];
   actions: DraftActions;
   canPost?: boolean;
+  manualPost?: boolean;
   busy?: { id: string; action: DraftActionName } | null;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export default function DraftGrid({
           draft={draft}
           actions={actions}
           canPost={canPost}
+          manualPost={manualPost}
           editOpen={editingId === draft.id}
           onOpenEdit={setEditingId}
           busyAction={busy?.id === draft.id ? busy.action : null}

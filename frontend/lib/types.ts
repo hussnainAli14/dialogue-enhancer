@@ -176,6 +176,7 @@ export interface ConversationSubmitData {
   post_author?: string | null;
   original_post: string;
   full_thread?: string | null;
+  source?: string | null;
 }
 
 export interface ConversationFilters {

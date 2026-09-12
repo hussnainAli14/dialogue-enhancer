@@ -74,9 +74,12 @@ def _coerce_analysis(data: dict) -> dict:
     }
 
 
-async def run_pipeline(conversation_id: str) -> None:
+async def run_pipeline(conversation_id: str, force_drafts: bool = False) -> None:
     """Full pipeline: retrieval → analysis → skip check → draft generation.
-    Triggered as a BackgroundTask from POST /conversations/submit."""
+    Triggered as a BackgroundTask from POST /conversations/submit.
+
+    force_drafts: generate replies even when analysis says DO_NOT_COMMENT
+    (used when the author clipped the post themselves)."""
     from app.services.generation import generate_drafts
 
     supabase = get_supabase()
@@ -109,8 +112,15 @@ async def run_pipeline(conversation_id: str) -> None:
             "id", conversation_id
         ).execute()
 
-        # STAGE 3 — skip check
-        if analysis.participation_recommendation == "DO_NOT_COMMENT":
+        # STAGE 3 — skip check. User-clipped posts still get drafts: the author
+        # already chose this conversation. Discovery-sourced ones can stop here.
+        source = conv.get("source") or "manual"
+        should_draft = (
+            force_drafts
+            or source in {"linkedin_clipper", "reddit_clipper"}
+            or analysis.participation_recommendation == "COMMENT"
+        )
+        if not should_draft:
             supabase.table("conversations").update({"analysis_status": "skipped"}).eq(
                 "id", conversation_id
             ).execute()

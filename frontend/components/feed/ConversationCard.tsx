@@ -48,6 +48,12 @@ export default function ConversationCard({
           </span>
         )}
         <PlatformBadge platform={conversation.platform} />
+        {(conversation.source === "linkedin_clipper" ||
+          conversation.source === "reddit_clipper") && (
+          <span className="rounded-full bg-blue-700/20 px-2 py-0.5 text-xs text-blue-300">
+            Clipped
+          </span>
+        )}
         {conversation.post_author && (
           <span className="text-sm text-text-secondary">{conversation.post_author}</span>
         )}

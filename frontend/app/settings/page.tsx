@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/useToast";
 import ConnectionsSection from "@/components/settings/ConnectionsSection";
 import DiscoverySettingsSection from "@/components/settings/DiscoverySettingsSection";
 import CommunityDiscoverySettingsSection from "@/components/settings/CommunityDiscoverySettingsSection";
+import LinkedInClipperSection from "@/components/settings/LinkedInClipperSection";
 import { PLATFORM_LABELS } from "@/lib/constants";
 
 const STORAGE_KEY = "dialogue-enhancer-settings";
@@ -66,6 +67,8 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <ConnectionsSection />
+
+      <LinkedInClipperSection />
 
       <DiscoverySettingsSection />
 

@@ -15,6 +15,9 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 @router.post("/submit")
 async def submit_conversation(body: ConversationSubmit, background_tasks: BackgroundTasks):
     try:
+        allowed_sources = {"manual", "linkedin_clipper", "reddit_clipper"}
+        source = body.source if body.source in allowed_sources else "manual"
+
         supabase = get_supabase()
         record = (
             supabase.table("conversations")
@@ -26,6 +29,7 @@ async def submit_conversation(body: ConversationSubmit, background_tasks: Backgr
                     "original_post": body.original_post,
                     "full_thread": body.full_thread,
                     "analysis_status": "pending",
+                    "source": source,
                 }
             )
             .execute()
@@ -112,9 +116,14 @@ async def list_conversations(
 
 
 @router.post("/{conversation_id}/generate-drafts")
-async def generate_drafts(conversation_id: str, background_tasks: BackgroundTasks):
+async def generate_drafts(
+    conversation_id: str,
+    background_tasks: BackgroundTasks,
+    force: bool = Query(False),
+):
     """Run the analysis + drafting pipeline on demand — used for replies-to-you,
-    which are surfaced without auto-drafting. Idempotent-ish: re-runs analysis."""
+    which are surfaced without auto-drafting. Idempotent-ish: re-runs analysis.
+    force=true still writes drafts when analysis says DO_NOT_COMMENT."""
     try:
         supabase = get_supabase()
         conv = (
@@ -126,8 +135,13 @@ async def generate_drafts(conversation_id: str, background_tasks: BackgroundTask
         supabase.table("conversations").update({"analysis_status": "pending"}).eq(
             "id", conversation_id
         ).execute()
-        log_task("analysis", conversation_id, "started", "On-demand draft generation.")
-        background_tasks.add_task(run_pipeline, conversation_id)
+        log_task(
+            "analysis",
+            conversation_id,
+            "started",
+            "On-demand draft generation" + (" (forced)." if force else "."),
+        )
+        background_tasks.add_task(run_pipeline, conversation_id, force)
         return ok({"conversation_id": conversation_id, "status": "pending"}, 202)
     except Exception:
         return fail("Failed to start draft generation", 500)

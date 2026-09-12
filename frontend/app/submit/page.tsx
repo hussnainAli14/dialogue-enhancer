@@ -54,6 +54,15 @@ export default function SubmitPage() {
           placeholder="Select a platform"
           options={PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABELS[p] }))}
         />
+        {(platform === "linkedin" || platform === "reddit") && (
+          <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-text-secondary">
+            Prefer the browser clipper (Settings → Browser Clipper) so you send
+            the post you are already reading.
+            {platform === "linkedin"
+              ? " You paste the approved draft back on LinkedIn yourself — this app will not post there."
+              : " If Reddit is connected, you can Approve & Post from the dashboard."}
+          </p>
+        )}
         <Input
           id="post-url"
           label="Post URL"

@@ -1,3 +1,19 @@
+/** Platforms the backend can publish a reply to after approval. */
+export const AUTO_POST_PLATFORMS = [
+  "bluesky",
+  "mastodon",
+  "reddit",
+  "discord",
+] as const;
+
+/** Platforms where the author copies the draft and posts it themselves. */
+export const MANUAL_POST_PLATFORMS = [
+  "linkedin",
+  "facebook",
+  "instagram",
+  "twitter",
+] as const;
+
 export const PLATFORMS = [
   "reddit",
   "bluesky",

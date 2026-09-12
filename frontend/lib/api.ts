@@ -116,9 +116,11 @@ export const conversationsApi = {
       reason?: string;
     }>(client.get(`/conversations/${id}/source-status`)),
 
-  generateDrafts: (id: string) =>
+  generateDrafts: (id: string, force = false) =>
     unwrap<{ conversation_id: string; status: string }>(
-      client.post(`/conversations/${id}/generate-drafts`)
+      client.post(`/conversations/${id}/generate-drafts`, null, {
+        params: force ? { force: true } : undefined,
+      })
     ),
 
   deleteConversation: (id: string) =>

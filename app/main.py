@@ -62,7 +62,8 @@ for _o in _settings.CORS_ALLOW_ORIGINS.split(","):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_origins),
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Vercel preview deploys
+    # Vercel previews + the LinkedIn clipper (chrome-extension://<id>).
+    allow_origin_regex=r"(https://.*\.vercel\.app|chrome-extension://.+)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

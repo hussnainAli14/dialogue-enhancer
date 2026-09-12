@@ -1,0 +1,92 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 360px;
+  padding: 14px;
+  background: #0a0f1e;
+  color: #f0f4f8;
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+header a {
+  color: #3b82f6;
+  font-size: 12px;
+}
+
+.lede,
+.hint,
+.status {
+  color: #8a9bb5;
+  margin: 8px 0 0;
+}
+
+.status {
+  margin-top: 12px;
+}
+
+.status.error {
+  color: #ef4444;
+}
+
+.status.ok {
+  color: #10b981;
+}
+
+.hidden {
+  display: none;
+}
+
+.card {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #1e2d45;
+  border-radius: 10px;
+  background: #111827;
+}
+
+.card .author {
+  color: #8a9bb5;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.card .excerpt {
+  white-space: pre-wrap;
+  max-height: 7.5em;
+  overflow: hidden;
+}
+
+button {
+  margin-top: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #1e5fa8;
+  color: #f0f4f8;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2570c4;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

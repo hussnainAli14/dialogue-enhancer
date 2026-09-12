@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clipper — Options</title>
+    <link rel="stylesheet" href="popup.css" />
+    <style>
+      body {
+        width: auto;
+        max-width: 520px;
+        margin: 32px auto;
+      }
+      label {
+        display: block;
+        margin-top: 14px;
+        color: #8a9bb5;
+        font-size: 12px;
+      }
+      input,
+      select {
+        width: 100%;
+        margin-top: 6px;
+        padding: 8px 10px;
+        border: 1px solid #1e2d45;
+        border-radius: 8px;
+        background: #111827;
+        color: #f0f4f8;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Clipper options</strong>
+    </header>
+    <p class="lede">
+      Where to send the post you pick, and where to open drafts afterward.
+    </p>
+
+    <label for="preset">Preset</label>
+    <select id="preset">
+      <option value="local">Local (localhost)</option>
+      <option value="production">Production</option>
+      <option value="custom">Custom</option>
+    </select>
+
+    <label for="apiUrl">API URL</label>
+    <input id="apiUrl" type="url" placeholder="http://localhost:8000" />
+
+    <label for="dashboardUrl">Dashboard URL</label>
+    <input id="dashboardUrl" type="url" placeholder="http://localhost:3000" />
+
+    <button id="save" type="button">Save</button>
+    <p id="status" class="status"></p>
+
+    <p class="hint">
+      This extension only reads the LinkedIn or Reddit post you select after you
+      click its icon. It never browses or posts for you.
+    </p>
+    <script src="options.js"></script>
+  </body>
+</html>

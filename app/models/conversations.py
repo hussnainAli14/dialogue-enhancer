@@ -32,6 +32,7 @@ class ConversationSubmit(BaseModel):
     post_author: str | None = None
     original_post: str = Field(min_length=1)
     full_thread: str | None = None
+    source: str | None = None
 
 
 class AnalysisResult(BaseModel):

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { conversationsApi, draftsApi } from "@/lib/api";
+import { AUTO_POST_PLATFORMS, MANUAL_POST_PLATFORMS } from "@/lib/constants";
 import type { ResponseDraft } from "@/lib/types";
 import { useConversation } from "@/hooks/useConversation";
 import { useToast } from "@/hooks/useToast";
@@ -105,9 +106,19 @@ export default function ConversationDetailPage() {
         () => draftsApi.unapproveDraft(id),
         "Approval removed — draft is pending again."
       ),
+    onMarkPosted: (id: string) =>
+      runAction(
+        findDraft(id),
+        "markPosted",
+        () => draftsApi.markPosted(id),
+        "Marked as posted. The reply was not sent by this app."
+      ),
   };
 
-  const canPost = ["bluesky", "mastodon", "reddit", "discord"].includes(
+  const canPost = (AUTO_POST_PLATFORMS as readonly string[]).includes(
+    data?.platform ?? ""
+  );
+  const manualPost = (MANUAL_POST_PLATFORMS as readonly string[]).includes(
     data?.platform ?? ""
   );
 
@@ -116,6 +127,7 @@ export default function ConversationDetailPage() {
   const [checkingSource, setCheckingSource] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [drafting, setDrafting] = useState(false);
 
   const checkSource = useCallback(
     async (announce = false) => {
@@ -143,6 +155,29 @@ export default function ConversationDetailPage() {
     if (data && canPost) checkSource(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.id, canPost]);
+
+  // Keep the page live while analysis/drafts are running so it does not sit
+  // on “generating…” until the user refreshes.
+  useEffect(() => {
+    if (!data || data.analysis_status !== "pending") {
+      setDrafting(false);
+      return;
+    }
+    const timer = window.setInterval(() => refetch({ silent: true }), 3000);
+    return () => window.clearInterval(timer);
+  }, [data?.analysis_status, refetch]);
+
+  const draftAnyway = async () => {
+    setDrafting(true);
+    try {
+      await conversationsApi.generateDrafts(params.id, true);
+      showToast("info", "Drafting anyway. This usually takes 15 to 30 seconds.");
+      await refetch({ silent: true });
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not start drafting");
+      setDrafting(false);
+    }
+  };
 
   const removeConversation = async () => {
     setRemoving(true);
@@ -255,16 +290,31 @@ export default function ConversationDetailPage() {
         {/* Right column — drafts */}
         <div className="lg:col-span-3">
           {data.drafts.length > 0 ? (
-            <DraftGrid drafts={data.drafts} actions={actions} canPost={canPost} busy={busy} />
+            <DraftGrid
+              drafts={data.drafts}
+              actions={actions}
+              canPost={canPost}
+              manualPost={manualPost}
+              busy={busy}
+            />
           ) : (
             <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-text-secondary">
               {data.analysis_status === "skipped" ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <StatusBadge status="skipped" />
                   <p>
-                    The system recommended not commenting on this conversation, so
-                    no drafts were generated.
+                    The system recommended not commenting — often because the post
+                    is promotional or there is little room to add value. You can
+                    still draft a reply if you want to engage.
                   </p>
+                  {data.analysis?.recommendation_reason && (
+                    <p className="text-xs text-text-muted">
+                      {data.analysis.recommendation_reason}
+                    </p>
+                  )}
+                  <Button size="sm" onClick={draftAnyway} loading={drafting}>
+                    Draft anyway
+                  </Button>
                 </div>
               ) : data.analysis_status === "pending" ? (
                 "Drafts are being generated…"

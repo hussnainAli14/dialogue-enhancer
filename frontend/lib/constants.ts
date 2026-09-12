@@ -55,10 +55,10 @@ export const STATUS_BADGE_CLASSES: Record<string, string> = {
 };
 
 export const STYLE_LABELS: Record<string, string> = {
-  insightful_contribution: "Insightful Contribution",
-  facilitative_question: "Facilitative Question",
-  synthesis_of_viewpoints: "Synthesis of Viewpoints",
-  constructive_challenge: "Constructive Challenge",
+  insightful_contribution: "Insightful",
+  facilitative_question: "Facilitative",
+  synthesis_of_viewpoints: "Wholistic",
+  constructive_challenge: "Challenging",
 };
 
 export const SOURCE_TYPES = [

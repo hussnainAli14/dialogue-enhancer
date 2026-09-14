@@ -8,6 +8,7 @@ import ConnectionsSection from "@/components/settings/ConnectionsSection";
 import DiscoverySettingsSection from "@/components/settings/DiscoverySettingsSection";
 import CommunityDiscoverySettingsSection from "@/components/settings/CommunityDiscoverySettingsSection";
 import LinkedInClipperSection from "@/components/settings/LinkedInClipperSection";
+import KeywordsSection from "@/components/settings/KeywordsSection";
 import { PLATFORM_LABELS } from "@/lib/constants";
 
 const STORAGE_KEY = "dialogue-enhancer-settings";
@@ -71,6 +72,8 @@ export default function SettingsPage() {
       <LinkedInClipperSection />
 
       <DiscoverySettingsSection />
+
+      <KeywordsSection />
 
       <CommunityDiscoverySettingsSection />
 

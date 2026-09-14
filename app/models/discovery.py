@@ -19,6 +19,10 @@ class DiscoverySettings:
     max_conversations_per_day: int = 5
     min_relevance_score: float = 0.65
     scoring_batch_size: int = 10
+    # Max active keywords searched per run (also the AI-curation target).
+    keyword_search_cap: int = 30
+    # How much knowledge-base overlap boosts the final relevance score (0-1).
+    kb_overlap_weight: float = 0.25
 
 
 class DiscoverySettingsUpdate(BaseModel):
@@ -28,6 +32,8 @@ class DiscoverySettingsUpdate(BaseModel):
     max_conversations_per_day: int | None = Field(default=None, ge=0)
     min_relevance_score: float | None = Field(default=None, ge=0, le=1)
     scoring_batch_size: int | None = Field(default=None, ge=1)
+    keyword_search_cap: int | None = Field(default=None, ge=1, le=200)
+    kb_overlap_weight: float | None = Field(default=None, ge=0, le=1)
     # ── Module 3 — community discovery settings ──
     community_discovery_enabled: bool | None = None
     community_schedule_hours: int | None = Field(default=None, ge=1)

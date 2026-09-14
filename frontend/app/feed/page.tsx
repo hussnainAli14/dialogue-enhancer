@@ -44,11 +44,42 @@ export default function FeedPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState<"newest" | "rating">("newest");
   const [postedToday, setPostedToday] = useState(0);
   const [discoveredToday, setDiscoveredToday] = useState(0);
   const [triggering, setTriggering] = useState(false);
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [pollingReplies, setPollingReplies] = useState(false);
+  // Server-side "load more": page 1 comes from the polling hook; older pages are
+  // fetched on demand and appended here, so the feed isn't capped at 100.
+  const [extra, setExtra] = useState<Conversation[]>([]);
+  const [serverPage, setServerPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Page 1 (live, polled) merged with any additionally loaded pages, deduped.
+  const loadedConvos = useMemo(() => {
+    const byId = new Map<string, Conversation>();
+    for (const c of data?.conversations ?? []) byId.set(c.id, c);
+    for (const c of extra) if (!byId.has(c.id)) byId.set(c.id, c);
+    return Array.from(byId.values());
+  }, [data, extra]);
+
+  const serverTotal = data?.total ?? 0;
+  const hasMoreServer = loadedConvos.length < serverTotal;
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const next = serverPage + 1;
+      const res = await conversationsApi.getConversations({ page_size: 100, page: next });
+      setExtra((prev) => [...prev, ...res.conversations]);
+      setServerPage(next);
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Failed to load more");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const loadDiscoveredToday = useCallback(async () => {
     try {
@@ -83,25 +114,27 @@ export default function FeedPage() {
   // Replies to your own posts — surfaced (starred) even before they are drafted.
   const replies = useMemo(
     () =>
-      (data?.conversations ?? [])
+      loadedConvos
         .filter((c) => c.is_reply_to_me && !c.has_posted_reply && !dismissed.has(c.id))
         .sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at)),
-    [data, dismissed]
+    [loadedConvos, dismissed]
   );
 
-  const discoveryReviewable = useMemo(
-    () =>
-      (data?.conversations ?? [])
-        .filter(
-          (c) =>
-            !c.is_reply_to_me &&
-            c.analysis_status === "analysed" &&
-            c.draft_count > 0 &&
-            !dismissed.has(c.id)
-        )
-        .sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0)),
-    [data, dismissed]
-  );
+  const discoveryReviewable = useMemo(() => {
+    const items = loadedConvos.filter(
+      (c) =>
+        !c.is_reply_to_me &&
+        c.analysis_status === "analysed" &&
+        c.draft_count > 0 &&
+        !dismissed.has(c.id)
+    );
+    if (sortBy === "newest") {
+      items.sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
+    } else {
+      items.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0));
+    }
+    return items;
+  }, [loadedConvos, dismissed, sortBy]);
 
   // Replies always sit at the top of the feed.
   const reviewable = useMemo(
@@ -111,16 +144,14 @@ export default function FeedPage() {
 
   const todayCount = useMemo(
     () =>
-      (data?.conversations ?? []).filter((c) =>
-        isWithinLast24Hours(c.submitted_at)
-      ).length,
-    [data]
+      loadedConvos.filter((c) => isWithinLast24Hours(c.submitted_at)).length,
+    [loadedConvos]
   );
 
   // Conversations submitted but still being analysed (no drafts yet).
   const analysingCount = useMemo(
-    () => (data?.conversations ?? []).filter((c) => c.analysis_status === "pending").length,
-    [data]
+    () => loadedConvos.filter((c) => c.analysis_status === "pending").length,
+    [loadedConvos]
   );
 
   // Posted-today count needs draft-level data; sample recent conversations.
@@ -288,7 +319,32 @@ export default function FeedPage() {
         </div>
       )}
 
-      <div className="mt-6 space-y-4">
+      <div className="mt-6 flex items-center justify-between">
+        <span className="text-xs text-text-muted">
+          {reviewable.length} awaiting review
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-muted">Sort:</span>
+          {(["newest", "rating"] as const).map((key) => (
+            <button
+              key={key}
+              onClick={() => {
+                setSortBy(key);
+                setPage(1);
+              }}
+              className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                sortBy === key
+                  ? "bg-accent text-white"
+                  : "bg-surface-raised text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {key === "newest" ? "Newest" : "Highest rated"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-4">
         {loading && !data ? (
           <>
             <SkeletonCard />
@@ -335,6 +391,21 @@ export default function FeedPage() {
             onClick={() => setPage((p) => p + 1)}
           >
             Next
+          </Button>
+        </div>
+      )}
+
+      {hasMoreServer && (
+        <div className="mt-6 flex justify-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={loadingMore}
+            onClick={loadMore}
+          >
+            {loadingMore
+              ? "Loading…"
+              : `Load more (${loadedConvos.length} of ${serverTotal})`}
           </Button>
         </div>
       )}

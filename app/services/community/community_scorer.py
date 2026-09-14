@@ -12,16 +12,18 @@ from app.services.retrieval import call_llm_with_retry, extract_json
 BATCH_SIZE = 15
 BATCH_TIMEOUT_SECONDS = 120
 
-SCORING_PROMPT = """You are helping a coach and author with 15 years of experience in coaching, \
-leadership, personal growth, spirituality, and community building find online communities where \
-they can make genuinely valuable contributions to discussions.
+SCORING_PROMPT = """You are helping the following author find online communities where they \
+can make genuinely valuable contributions to discussions.
+
+AUTHOR PROFILE:
+{profile}
 
 The author's topics of interest: {topics}
 
 Score each community below from 0.00 to 1.00 on four criteria, then return the weighted average \
 as final_score:
-- topic_relevance (weight 0.40): how closely this community discusses coaching, leadership, \
-personal growth, spirituality, or community building.
+- topic_relevance (weight 0.40): how closely this community discusses the author's areas of \
+focus described in the profile above.
 - audience_fit (weight 0.30): how well its audience matches the author's readers and the people \
 they want to reach.
 - discussion_quality (weight 0.20): based on the description and activity level, whether it \
@@ -93,7 +95,11 @@ class CommunityScorer:
     ) -> list[ScoredCommunity]:
         if not batch:
             return []
+        from app.services.author_profile import get_author_profile
+
+        profile = await get_author_profile()
         prompt = SCORING_PROMPT.format(
+            profile=profile,
             topics=", ".join(topics) or "coaching, leadership, personal growth",
             communities="\n".join(_format(c) for c in batch),
         )

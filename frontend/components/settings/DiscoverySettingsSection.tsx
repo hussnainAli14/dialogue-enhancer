@@ -119,6 +119,40 @@ export default function DiscoverySettingsSection() {
             </p>
           </div>
 
+          <div>
+            <Input
+              label="Keyword Search Cap"
+              type="number"
+              min="1"
+              max="200"
+              value={String(settings.keyword_search_cap ?? 30)}
+              onChange={(e) => set("keyword_search_cap", Number(e.target.value))}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              Max active keywords searched per run (and the AI-curation target). Higher = wider
+              reach but more API/quota cost.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-text-secondary">
+              Knowledge-base weight: {((settings.kb_overlap_weight ?? 0.25) * 100).toFixed(0)}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.kb_overlap_weight ?? 0.25}
+              onChange={(e) => set("kb_overlap_weight", Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              How much a post matching your knowledge base boosts its relevance score. The rest is
+              the AI&apos;s judgment. 0% ignores the knowledge base.
+            </p>
+          </div>
+
           <Button onClick={save} loading={saving}>
             Save Discovery Settings
           </Button>

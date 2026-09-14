@@ -42,6 +42,34 @@ async def targets():
         return fail(f"Failed to load posting targets: {exc}", 500)
 
 
+@router.post("/compose-suggest")
+async def compose_suggest(body: dict):
+    """Generate four original-post candidates (Wholistic / Challenging / Insightful
+    / Facilitative) from the author's seed thoughts, grounded in the knowledge
+    base. Returns candidates for the composer — nothing is posted or stored."""
+    body = body or {}
+    seed = {
+        "thinking": (body.get("thinking") or "").strip(),
+        "example": (body.get("example") or "").strip(),
+        "tension": (body.get("tension") or "").strip(),
+        "invite": (body.get("invite") or "").strip(),
+    }
+    if not any(seed.values()):
+        return fail("Fill in at least one box so there's something to work from.", 400)
+    char_limit = body.get("char_limit")
+    try:
+        char_limit = int(char_limit) if char_limit else None
+    except (TypeError, ValueError):
+        char_limit = None
+    try:
+        from app.services.generation import generate_compose_candidates
+
+        candidates = await generate_compose_candidates(seed, char_limit=char_limit)
+        return ok({"candidates": candidates})
+    except Exception as exc:
+        return fail(f"Failed to generate suggestions: {exc}", 500)
+
+
 @router.post("/poll-replies")
 async def poll_replies_now():
     """Manually check connected platforms for new replies to your posts."""

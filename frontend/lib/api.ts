@@ -12,6 +12,7 @@ import type {
   CommunitySuggestion,
   DiscoveredPost,
   DiscoveryRun,
+  DiscoveryKeyword,
   DiscoverySettings,
   DiscoveryStatus,
   DiscoveryTopic,
@@ -212,6 +213,12 @@ export interface PostResult {
   error?: string;
 }
 
+export interface ComposeCandidate {
+  style: string;
+  content: string;
+  value_explanation: string | null;
+}
+
 export const postsApi = {
   getTargets: () =>
     unwrap<{ targets: PostTarget[] }>(client.get("/posts/targets")),
@@ -219,6 +226,17 @@ export const postsApi = {
   pollReplies: () =>
     unwrap<{ checked: number; new_replies: number; skipped?: string }>(
       client.post("/posts/poll-replies")
+    ),
+
+  composeSuggest: (seed: {
+    thinking?: string;
+    example?: string;
+    tension?: string;
+    invite?: string;
+    char_limit?: number | null;
+  }) =>
+    unwrap<{ candidates: ComposeCandidate[] }>(
+      client.post("/posts/compose-suggest", seed)
     ),
 
   createPost: (
@@ -342,6 +360,29 @@ export const discoveryApi = {
 
   updateSettings: (data: Partial<DiscoverySettings>) =>
     unwrap<DiscoverySettings>(client.post("/discovery/settings", data)),
+
+  // Keywords (knowledge-base derived + manual)
+  getKeywords: () =>
+    unwrap<{
+      keywords: DiscoveryKeyword[];
+      total: number;
+      active_count: number;
+      search_cap: number;
+    }>(client.get("/discovery/keywords")),
+
+  addKeyword: (keyword: string) =>
+    unwrap<{ keyword: DiscoveryKeyword }>(client.post("/discovery/keywords", { keyword })),
+
+  updateKeyword: (id: string, is_active: boolean) =>
+    unwrap<{ keyword: DiscoveryKeyword }>(
+      client.patch(`/discovery/keywords/${id}`, { is_active })
+    ),
+
+  deleteKeyword: (id: string) =>
+    unwrap<{ deleted: boolean }>(client.delete(`/discovery/keywords/${id}`)),
+
+  rescanKeywords: () =>
+    unwrap<{ status: string }>(client.post("/discovery/keywords/rescan")),
 };
 
 export const communityApi = {

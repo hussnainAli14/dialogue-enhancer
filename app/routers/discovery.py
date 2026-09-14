@@ -290,6 +290,111 @@ async def delete_community(community_id: str):
         return fail(f"Failed to delete community: {exc}", 500)
 
 
+# ── Keywords (knowledge-base derived + manual) ────────
+
+@router.get("/keywords")
+async def list_keywords():
+    """All discovery keywords with source and active state, plus the search cap
+    so the UI can show how many are actually used per run."""
+    try:
+        rows = (
+            _supabase()
+            .table("discovery_keywords")
+            .select("*")
+            .order("created_at")
+            .execute()
+        ).data or []
+        active = [r for r in rows if r.get("is_active")]
+        return ok(
+            {
+                "keywords": rows,
+                "total": len(rows),
+                "active_count": len(active),
+                "search_cap": store.get_settings().keyword_search_cap,
+            }
+        )
+    except Exception as exc:
+        return fail(f"Failed to load keywords: {exc}", 500)
+
+
+@router.post("/keywords")
+async def add_keyword(body: dict):
+    keyword = (body or {}).get("keyword", "").strip()
+    if not keyword:
+        return fail("Keyword is required.", 400)
+    normalized = " ".join(keyword.lower().split())
+    if len(normalized) > 60:
+        return fail("Keyword is too long.", 400)
+    try:
+        row = (
+            _supabase()
+            .table("discovery_keywords")
+            .insert(
+                {
+                    "keyword": keyword,
+                    "normalized": normalized,
+                    "source": "manual",
+                    "is_active": True,
+                }
+            )
+            .execute()
+        ).data[0]
+        return ok({"keyword": row}, 201)
+    except Exception as exc:
+        return fail(f"Failed to add keyword (already exists?): {exc}", 400)
+
+
+@router.patch("/keywords/{keyword_id}")
+async def update_keyword(keyword_id: str, body: dict):
+    fields = {}
+    if body and body.get("is_active") is not None:
+        fields["is_active"] = bool(body["is_active"])
+    if not fields:
+        return fail("No fields to update.", 400)
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        res = (
+            _supabase()
+            .table("discovery_keywords")
+            .update(fields)
+            .eq("id", keyword_id)
+            .execute()
+        ).data
+        if not res:
+            return fail("Keyword not found.", 404)
+        return ok({"keyword": res[0]})
+    except Exception as exc:
+        return fail(f"Failed to update keyword: {exc}", 500)
+
+
+@router.delete("/keywords/{keyword_id}")
+async def delete_keyword(keyword_id: str):
+    try:
+        _supabase().table("discovery_keywords").delete().eq("id", keyword_id).execute()
+        return ok({"deleted": True})
+    except Exception as exc:
+        return fail(f"Failed to delete keyword: {exc}", 500)
+
+
+@router.post("/keywords/rescan")
+async def rescan_keywords(background_tasks: BackgroundTasks):
+    """Re-derive keywords from every ready knowledge-base document. Runs in the
+    background; existing keywords and manual edits are preserved."""
+    from app.services.discovery.keyword_extraction import rescan_all_documents
+
+    background_tasks.add_task(rescan_all_documents)
+    return ok({"status": "started"}, 202)
+
+
+@router.post("/keywords/recurate")
+async def recurate_keywords():
+    """Re-pick the best ~30 keywords to keep active (without re-extracting)."""
+    from app.services.discovery.keyword_extraction import curate_keywords
+
+    active = await curate_keywords()
+    return ok({"active_count": active})
+
+
 # ── Settings ──────────────────────────────────────────
 
 COMMUNITY_SETTING_KEYS = [
@@ -324,6 +429,8 @@ async def get_settings():
                 "max_conversations_per_day": s.max_conversations_per_day,
                 "min_relevance_score": s.min_relevance_score,
                 "scoring_batch_size": s.scoring_batch_size,
+                "keyword_search_cap": s.keyword_search_cap,
+                "kb_overlap_weight": s.kb_overlap_weight,
                 **_community_settings_row(),
             }
         )
@@ -360,6 +467,8 @@ async def update_settings(body: DiscoverySettingsUpdate):
                 "max_conversations_per_day": updated.max_conversations_per_day,
                 "min_relevance_score": updated.min_relevance_score,
                 "scoring_batch_size": updated.scoring_batch_size,
+                "keyword_search_cap": updated.keyword_search_cap,
+                "kb_overlap_weight": updated.kb_overlap_weight,
                 **_community_settings_row(),
             }
         )

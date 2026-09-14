@@ -249,6 +249,21 @@ async def run_ingestion(document_id: str, storage_path: str, file_type: str) -> 
         ).execute()
         log_task("ingestion", document_id, "completed", f"{len(chunks)} chunks stored")
 
+        # Derive discovery keywords from this document (best-effort — a failure
+        # here must never fail the ingestion itself).
+        try:
+            from app.services.discovery.keyword_extraction import (
+                curate_keywords,
+                extract_keywords_for_document,
+            )
+
+            new_kw = await extract_keywords_for_document(document_id, text)
+            if new_kw:
+                # Re-pick the best active set now this document's keywords are in.
+                await curate_keywords()
+        except Exception as exc:  # noqa: BLE001
+            log_task("ingestion", document_id, "failed", f"Keyword extraction skipped: {exc}")
+
     except Exception as exc:
         supabase.table("documents").update(
             {"status": "error", "error_message": str(exc)[:1000]}

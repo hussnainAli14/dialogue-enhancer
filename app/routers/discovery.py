@@ -431,6 +431,9 @@ async def get_settings():
                 "scoring_batch_size": s.scoring_batch_size,
                 "keyword_search_cap": s.keyword_search_cap,
                 "kb_overlap_weight": s.kb_overlap_weight,
+                "min_engagement_score": s.min_engagement_score,
+                "engagement_weight": s.engagement_weight,
+                "discovery_lookback_hours": s.discovery_lookback_hours,
                 **_community_settings_row(),
             }
         )
@@ -469,6 +472,9 @@ async def update_settings(body: DiscoverySettingsUpdate):
                 "scoring_batch_size": updated.scoring_batch_size,
                 "keyword_search_cap": updated.keyword_search_cap,
                 "kb_overlap_weight": updated.kb_overlap_weight,
+                "min_engagement_score": updated.min_engagement_score,
+                "engagement_weight": updated.engagement_weight,
+                "discovery_lookback_hours": updated.discovery_lookback_hours,
                 **_community_settings_row(),
             }
         )

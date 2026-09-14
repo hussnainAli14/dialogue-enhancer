@@ -109,7 +109,7 @@ class DiscoveryWorker:
                 )
 
             # STEP 3 — fetch
-            since = _now() - timedelta(hours=24)
+            since = _now() - timedelta(hours=settings.discovery_lookback_hours)
             posts = await self.fetcher.fetch_from_all_platforms(
                 keywords=search_keywords,
                 communities=grouped,
@@ -148,8 +148,19 @@ class DiscoveryWorker:
             self._update_run(run_id, {"posts_scored": result.posts_scored})
 
             # STEP 6 — filter + rank
-            passing = [s for s in scored if s.final_score >= settings.min_relevance_score]
-            passing.sort(key=lambda s: s.final_score, reverse=True)
+            # Keep only posts that clear both the relevance floor and the
+            # engagement floor (skips dead, low-audience posts), then rank by a
+            # blend of relevance and engagement so busier posts come first.
+            ew = settings.engagement_weight
+            passing = [
+                s for s in scored
+                if s.final_score >= settings.min_relevance_score
+                and (s.post.engagement_score or 0) >= settings.min_engagement_score
+            ]
+            passing.sort(
+                key=lambda s: s.final_score * (1 - ew) + (s.post.engagement_score or 0) * ew,
+                reverse=True,
+            )
             remaining = max(0, settings.max_conversations_per_day - store.daily_conversation_count())
             to_submit = passing[:remaining]
             submit_keys = {(s.post.platform, s.post.post_id) for s in to_submit}

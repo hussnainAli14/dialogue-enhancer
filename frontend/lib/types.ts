@@ -310,6 +310,9 @@ export interface DiscoverySettings {
   scoring_batch_size: number;
   keyword_search_cap?: number;
   kb_overlap_weight?: number;
+  min_engagement_score?: number;
+  engagement_weight?: number;
+  discovery_lookback_hours?: number;
   // Module 3 — community discovery
   community_discovery_enabled?: boolean;
   community_schedule_hours?: number;

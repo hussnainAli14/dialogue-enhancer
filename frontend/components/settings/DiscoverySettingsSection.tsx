@@ -153,6 +153,59 @@ export default function DiscoverySettingsSection() {
             </p>
           </div>
 
+          <div>
+            <label className="text-xs text-text-secondary">
+              Minimum engagement: {((settings.min_engagement_score ?? 0) * 100).toFixed(0)}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.min_engagement_score ?? 0}
+              onChange={(e) => set("min_engagement_score", Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              Skip posts below this engagement level (likes/comments/views, normalised per
+              platform), so you do not reply to dead, low-audience posts. 0% keeps everything.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-text-secondary">
+              Engagement weight in ranking: {((settings.engagement_weight ?? 0.3) * 100).toFixed(0)}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.engagement_weight ?? 0.3}
+              onChange={(e) => set("engagement_weight", Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              How much a post&apos;s engagement (vs. relevance) decides its rank, so busier posts
+              get surfaced and submitted first.
+            </p>
+          </div>
+
+          <div>
+            <Input
+              label="Lookback window (hours)"
+              type="number"
+              min="1"
+              max="720"
+              value={String(settings.discovery_lookback_hours ?? 72)}
+              onChange={(e) => set("discovery_lookback_hours", Number(e.target.value))}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              How far back to look for posts. A wider window (e.g. 72h) gives posts time to gain an
+              audience; a narrow one keeps things fresh but may surface low-traction posts.
+            </p>
+          </div>
+
           <Button onClick={save} loading={saving}>
             Save Discovery Settings
           </Button>

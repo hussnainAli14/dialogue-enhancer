@@ -32,6 +32,17 @@ def get_settings() -> DiscoverySettings:
                     if r.get("kb_overlap_weight") is not None
                     else 0.25
                 ),
+                min_engagement_score=(
+                    r.get("min_engagement_score")
+                    if r.get("min_engagement_score") is not None
+                    else 0.0
+                ),
+                engagement_weight=(
+                    r.get("engagement_weight")
+                    if r.get("engagement_weight") is not None
+                    else 0.3
+                ),
+                discovery_lookback_hours=r.get("discovery_lookback_hours") or 72,
             )
     except Exception:
         pass

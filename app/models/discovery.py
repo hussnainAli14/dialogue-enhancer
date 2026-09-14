@@ -23,6 +23,12 @@ class DiscoverySettings:
     keyword_search_cap: int = 30
     # How much knowledge-base overlap boosts the final relevance score (0-1).
     kb_overlap_weight: float = 0.25
+    # Minimum engagement (0-1) a post needs to be considered — skips dead posts.
+    min_engagement_score: float = 0.0
+    # How much engagement weighs in ranking vs relevance (0-1).
+    engagement_weight: float = 0.3
+    # How far back to look for posts, so they have time to gain an audience.
+    discovery_lookback_hours: int = 72
 
 
 class DiscoverySettingsUpdate(BaseModel):
@@ -34,6 +40,9 @@ class DiscoverySettingsUpdate(BaseModel):
     scoring_batch_size: int | None = Field(default=None, ge=1)
     keyword_search_cap: int | None = Field(default=None, ge=1, le=200)
     kb_overlap_weight: float | None = Field(default=None, ge=0, le=1)
+    min_engagement_score: float | None = Field(default=None, ge=0, le=1)
+    engagement_weight: float | None = Field(default=None, ge=0, le=1)
+    discovery_lookback_hours: int | None = Field(default=None, ge=1, le=720)
     # ── Module 3 — community discovery settings ──
     community_discovery_enabled: bool | None = None
     community_schedule_hours: int | None = Field(default=None, ge=1)

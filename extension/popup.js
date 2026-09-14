@@ -1,6 +1,6 @@
 const DEFAULTS = {
-  apiUrl: "http://localhost:8000",
-  dashboardUrl: "http://localhost:3000",
+  apiUrl: "https://dialogue-enhancer.onrender.com",
+  dashboardUrl: "https://dialogue-enhancer.vercel.app",
 };
 
 const statusEl = document.getElementById("status");

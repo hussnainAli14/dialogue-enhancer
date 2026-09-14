@@ -22,7 +22,7 @@ function matchPreset(apiUrl, dashboardUrl) {
 }
 
 chrome.storage.sync.get(
-  { apiUrl: PRESETS.local.apiUrl, dashboardUrl: PRESETS.local.dashboardUrl },
+  { apiUrl: PRESETS.production.apiUrl, dashboardUrl: PRESETS.production.dashboardUrl },
   (stored) => {
     apiEl.value = stored.apiUrl;
     dashEl.value = stored.dashboardUrl;

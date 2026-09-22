@@ -85,10 +85,9 @@ class XConnector(BaseConnector):
                     "code": code,
                     "redirect_uri": settings.X_REDIRECT_URI,
                     "code_verifier": verifier,
-                    "client_id": settings.X_CLIENT_ID,
                 },
             )
-            res.raise_for_status()
+            _raise_x(res)
             tok = res.json()
             access_token = tok["access_token"]
             refresh_token = tok.get("refresh_token")
@@ -98,7 +97,7 @@ class XConnector(BaseConnector):
                 f"{API}/users/me",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
-            me.raise_for_status()
+            _raise_x(me)
             user = me.json().get("data", {})
 
         username = user.get("username", "")
@@ -125,10 +124,9 @@ class XConnector(BaseConnector):
                 data={
                     "grant_type": "refresh_token",
                     "refresh_token": connection.refresh_token,
-                    "client_id": settings.X_CLIENT_ID,
                 },
             )
-            res.raise_for_status()
+            _raise_x(res)
             tok = res.json()
         return ConnectionResult(
             account_name=connection.account_name,

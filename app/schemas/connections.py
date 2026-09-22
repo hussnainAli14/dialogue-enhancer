@@ -7,10 +7,10 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-PLATFORMS = ["reddit", "bluesky", "mastodon", "discord", "telegram", "threads", "youtube"]
+PLATFORMS = ["reddit", "bluesky", "mastodon", "discord", "telegram", "threads", "youtube", "x"]
 
 # Platforms that use a redirect-based OAuth flow (get_auth_url -> callback).
-OAUTH_PLATFORMS = {"reddit", "mastodon", "discord", "threads", "youtube"}
+OAUTH_PLATFORMS = {"reddit", "mastodon", "discord", "threads", "youtube", "x"}
 # Platforms connected directly without a redirect (credentials / bot token).
 DIRECT_PLATFORMS = {"bluesky", "telegram"}
 

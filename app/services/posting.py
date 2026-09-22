@@ -10,10 +10,10 @@ from app.services import token_store
 from app.services.connections.factory import get_connector
 
 # Platforms with a working post_reply / post_exists implementation.
-SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord", "threads", "youtube"}
+SUPPORTED_POSTING = {"bluesky", "mastodon", "reddit", "discord", "threads", "youtube", "x"}
 
 # Platforms with a working create_post (standalone post) implementation.
-SUPPORTED_STANDALONE = {"bluesky", "mastodon", "threads"}
+SUPPORTED_STANDALONE = {"bluesky", "mastodon", "threads", "x"}
 
 # Hard per-post character limits.
 PLATFORM_CHAR_LIMITS = {
@@ -23,6 +23,7 @@ PLATFORM_CHAR_LIMITS = {
     "discord": 2000,
     "threads": 500,
     "youtube": 10000,
+    "x": 280,
 }
 
 

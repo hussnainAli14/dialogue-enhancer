@@ -30,6 +30,7 @@ const SUPPORTED = [
   "telegram",
   "threads",
   "youtube",
+  "x",
 ];
 
 const STATUS_STYLES: Record<string, string> = {

@@ -6,6 +6,7 @@ export const AUTO_POST_PLATFORMS = [
   "discord",
   "threads",
   "youtube",
+  "x",
 ] as const;
 
 /** Platforms where the author copies the draft and posts it themselves. */
@@ -42,6 +43,7 @@ export const PLATFORM_LABELS: Record<string, string> = {
   linkedin: "LinkedIn",
   instagram: "Instagram",
   twitter: "X (Twitter)",
+  x: "X",
 };
 
 export const PLATFORM_BADGE_CLASSES: Record<string, string> = {
@@ -56,6 +58,7 @@ export const PLATFORM_BADGE_CLASSES: Record<string, string> = {
   linkedin: "bg-blue-700/20 text-blue-300",
   instagram: "bg-pink-500/20 text-pink-400",
   twitter: "bg-sky-400/20 text-sky-300",
+  x: "bg-neutral-500/20 text-neutral-200",
 };
 
 export const STATUS_BADGE_CLASSES: Record<string, string> = {

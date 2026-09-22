@@ -44,6 +44,10 @@ def get_connector(platform: str) -> BaseConnector:
         from app.services.connections.youtube import YouTubeConnector
 
         return YouTubeConnector()
+    if platform == "x":
+        from app.services.connections.x import XConnector
+
+        return XConnector()
     raise ValueError(f"Unknown platform: {platform}")
 
 

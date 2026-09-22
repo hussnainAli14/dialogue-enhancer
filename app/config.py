@@ -69,6 +69,10 @@ class Settings:
     YOUTUBE_CLIENT_SECRET: str = os.getenv("YOUTUBE_CLIENT_SECRET", "")
     YOUTUBE_REDIRECT_URI: str = os.getenv("YOUTUBE_REDIRECT_URI", "")
 
+    X_CLIENT_ID: str = os.getenv("X_CLIENT_ID", "")
+    X_CLIENT_SECRET: str = os.getenv("X_CLIENT_SECRET", "")
+    X_REDIRECT_URI: str = os.getenv("X_REDIRECT_URI", "")
+
     # ── Module 4 — discovery (fallbacks; DB discovery_settings wins) ──
     DISCOVERY_ENABLED: bool = os.getenv("DISCOVERY_ENABLED", "true").lower() == "true"
     DISCOVERY_SCHEDULE_MINUTES: int = int(os.getenv("DISCOVERY_SCHEDULE_MINUTES", "30"))

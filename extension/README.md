@@ -1,8 +1,8 @@
 # Dialogue Enhancer Clipper
 
-A Chrome extension that sends **the LinkedIn or Reddit post you are already reading** into Dialogue Enhancer. It does not scroll the feed, search, visit other profiles, or publish comments.
+A Chrome extension that sends **the LinkedIn, Reddit or X post you are already reading** into Dialogue Enhancer. It does not scroll the feed, search, visit other profiles, or publish comments.
 
-LinkedIn replies stay manual (copy and paste). Reddit can use Approve & Post if Reddit is connected.
+LinkedIn and X replies stay manual (copy and paste). Reddit can use Approve & Post if Reddit is connected.
 
 ## Install (unpacked)
 
@@ -15,7 +15,7 @@ LinkedIn replies stay manual (copy and paste). Reddit can use Approve & Post if 
 
 ## Use
 
-1. Open the post on LinkedIn or Reddit
+1. Open the post on LinkedIn, Reddit or X
 2. Click the extension icon
 3. Send that post
 4. Review drafts in the dashboard

@@ -18,11 +18,12 @@ Platform = Literal[
     "linkedin",
     "instagram",
     "twitter",
+    "x",
 ]
 
 ALLOWED_PLATFORMS = {
     "reddit", "bluesky", "mastodon", "discord", "telegram",
-    "threads", "youtube", "facebook", "linkedin", "instagram", "twitter",
+    "threads", "youtube", "facebook", "linkedin", "instagram", "twitter", "x",
 }
 
 

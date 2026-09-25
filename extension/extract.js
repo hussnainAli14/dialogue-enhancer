@@ -10,6 +10,7 @@ function extractPagePosts() {
     const host = location.hostname;
     if (host.endsWith("reddit.com")) return runRedditExtract();
     if (host.endsWith("linkedin.com")) return runLinkedInExtract();
+    if (host.endsWith("x.com") || host.endsWith("twitter.com")) return runXExtract();
     return { posts: [], error: "unsupported-site", debug: {} };
   } catch (err) {
     return {
@@ -401,6 +402,84 @@ function extractPagePosts() {
       posts,
       debug: {
         containers: all.length,
+        body: (document.body?.innerText || "").length,
+        main: (document.querySelector("main")?.innerText || "").length,
+      },
+    };
+  }
+
+  function runXExtract() {
+    function textOf(article) {
+      // The tweet body; a tweet can have several tweetText nodes (rare) — take
+      // the longest so quoted-tweet snippets don't win over the main text.
+      return pickLongest(article, ['[data-testid="tweetText"]']);
+    }
+
+    function authorOf(article) {
+      const raw = pickLongest(article, ['[data-testid="User-Name"]']);
+      if (!raw) return null;
+      // "Display Name\n@handle\n·\n2h" -> prefer the @handle, else the name.
+      const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
+      const handle = lines.find((l) => l.startsWith("@"));
+      return handle || lines[0] || null;
+    }
+
+    function urlOf(article) {
+      // The timestamp is a link to the canonical /status/ permalink.
+      const links = queryAllDeep(article, 'a[href*="/status/"]');
+      for (const a of links) {
+        if (a.href && /\/status\/\d+/.test(a.href)) {
+          return a.href.split(/[?#]/)[0];
+        }
+      }
+      return location.href.split(/[?#]/)[0];
+    }
+
+    const onStatusPage = /\/status\/\d+/.test(location.pathname);
+    const articles = outermost(queryAllDeep(document, 'article[data-testid="tweet"]'));
+    const posts = [];
+    const seen = new Set();
+    const threadTexts = [];
+
+    for (const article of articles) {
+      const original_post = textOf(article);
+      if (!original_post || original_post.length < 4) continue;
+      const key = original_post.slice(0, 80);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const author = authorOf(article);
+      threadTexts.push(`${author || "Someone"}: ${original_post}`);
+      posts.push({
+        platform: "x",
+        source: "x_clipper",
+        post_url: urlOf(article),
+        post_author: author,
+        original_post,
+      });
+      if (posts.length >= 8) break;
+    }
+
+    // On a single-tweet page, attach the visible replies as thread context to
+    // the first (main) tweet.
+    if (onStatusPage && posts.length && threadTexts.length > 1) {
+      posts[0].full_thread = threadTexts.join("\n\n").slice(0, 8000);
+    }
+    for (const p of posts) {
+      if (!p.full_thread) p.full_thread = p.original_post;
+    }
+
+    if (!posts.length) {
+      const fallback = fallbackPagePost("x", "x_clipper");
+      if (fallback) posts.push(fallback);
+    }
+
+    return {
+      platform: "x",
+      pageUrl: location.href.split(/[?#]/)[0],
+      permalink: onStatusPage,
+      posts,
+      debug: {
+        articles: articles.length,
         body: (document.body?.innerText || "").length,
         main: (document.querySelector("main")?.innerText || "").length,
       },

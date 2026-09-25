@@ -15,7 +15,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 @router.post("/submit")
 async def submit_conversation(body: ConversationSubmit, background_tasks: BackgroundTasks):
     try:
-        allowed_sources = {"manual", "linkedin_clipper", "reddit_clipper"}
+        allowed_sources = {"manual", "linkedin_clipper", "reddit_clipper", "x_clipper"}
         source = body.source if body.source in allowed_sources else "manual"
 
         supabase = get_supabase()

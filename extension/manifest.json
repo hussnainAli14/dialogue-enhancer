@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Dialogue Enhancer Clipper",
-  "version": "1.1.0",
-  "description": "Send the LinkedIn or Reddit post you are reading to Dialogue Enhancer. Does not browse, search, or post.",
+  "version": "1.2.0",
+  "description": "Send the LinkedIn, Reddit or X post you are reading to Dialogue Enhancer. Does not browse, search, or post.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://www.linkedin.com/*",
@@ -11,13 +11,18 @@
     "https://old.reddit.com/*",
     "https://sh.reddit.com/*",
     "https://reddit.com/*",
+    "https://x.com/*",
+    "https://www.x.com/*",
+    "https://twitter.com/*",
+    "https://www.twitter.com/*",
+    "https://mobile.twitter.com/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
     "https://dialogue-enhancer.onrender.com/*"
   ],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "action": {
-    "default_title": "Send this LinkedIn or Reddit post",
+    "default_title": "Send this LinkedIn, Reddit or X post",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

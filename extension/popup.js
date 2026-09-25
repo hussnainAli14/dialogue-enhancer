@@ -20,6 +20,7 @@ function truncate(text, n) {
 function siteFromHost(host) {
   if (host.endsWith("linkedin.com")) return "linkedin";
   if (host.endsWith("reddit.com")) return "reddit";
+  if (host.endsWith("x.com") || host.endsWith("twitter.com")) return "x";
   return null;
 }
 
@@ -121,7 +122,7 @@ async function main() {
 
   const site = siteFromHost(host);
   if (!site) {
-    setStatus("Open a LinkedIn or Reddit post, then click this icon again.", "error");
+    setStatus("Open a LinkedIn, Reddit or X post, then click this icon again.", "error");
     return;
   }
 
@@ -168,7 +169,7 @@ async function main() {
   if (!posts.length) {
     const extra = lastError ? ` (${lastError})` : "";
     const body = lastDebug?.body ?? 0;
-    const label = site === "reddit" ? "Reddit" : "LinkedIn";
+    const label = site === "reddit" ? "Reddit" : site === "x" ? "X" : "LinkedIn";
     setStatus(
       body
         ? `Could not isolate the post text${extra}. Open the post itself, then try again.`

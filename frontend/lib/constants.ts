@@ -6,7 +6,6 @@ export const AUTO_POST_PLATFORMS = [
   "discord",
   "threads",
   "youtube",
-  "x",
 ] as const;
 
 /** Platforms where the author copies the draft and posts it themselves. */
@@ -15,6 +14,7 @@ export const MANUAL_POST_PLATFORMS = [
   "facebook",
   "instagram",
   "twitter",
+  "x",
 ] as const;
 
 export const PLATFORMS = [

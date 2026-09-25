@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { conversationsApi, draftsApi } from "@/lib/api";
@@ -157,15 +157,41 @@ export default function ConversationDetailPage() {
   }, [data?.id, canPost]);
 
   // Keep the page live while analysis/drafts are running so it does not sit
-  // on “generating…” until the user refreshes.
+  // on “generating…” until the user refreshes. Drafts are generated a few
+  // seconds AFTER analysis flips to "analysed", so we must keep polling through
+  // that gap — not stop the moment analysis is done — otherwise the drafts
+  // never appear until a manual reload. Bounded so an analysed conversation
+  // that genuinely produced no drafts doesn't poll forever.
+  const draftWaitPolls = useRef(0);
   useEffect(() => {
-    if (!data || data.analysis_status !== "pending") {
+    if (!data) return;
+    const analysing = data.analysis_status === "pending";
+    const awaitingDrafts =
+      data.analysis_status === "analysed" && data.drafts.length === 0;
+
+    if (analysing) {
+      draftWaitPolls.current = 0;
+    } else if (!awaitingDrafts) {
       setDrafting(false);
+      draftWaitPolls.current = 0;
       return;
     }
-    const timer = window.setInterval(() => refetch({ silent: true }), 3000);
+
+    const timer = window.setInterval(() => {
+      // While waiting for drafts after analysis, give generation ~60s
+      // (20 × 3s) then stop so a genuinely empty result doesn't poll forever.
+      if (awaitingDrafts) {
+        draftWaitPolls.current += 1;
+        if (draftWaitPolls.current > 20) {
+          setDrafting(false);
+          window.clearInterval(timer);
+          return;
+        }
+      }
+      refetch({ silent: true });
+    }, 3000);
     return () => window.clearInterval(timer);
-  }, [data?.analysis_status, refetch]);
+  }, [data?.analysis_status, data?.drafts.length, refetch]);
 
   const draftAnyway = async () => {
     setDrafting(true);

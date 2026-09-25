@@ -186,6 +186,29 @@ async def get_post(post_id: str):
         return fail(f"Failed to load post: {exc}", 500)
 
 
+async def _submit_discovered_row(row: dict) -> str:
+    """Turn a discovered_posts row into a conversation and mark it submitted.
+    Returns the conversation id. Shared by manual submit and re-evaluate."""
+    post = UniversalPost(
+        platform=row["platform"],
+        post_id=row["post_id"],
+        post_url=row.get("post_url") or "",
+        author_name=row.get("author_name") or "",
+        author_id=row.get("author_id") or "",
+        content=row["content"],
+        posted_at=datetime.now(timezone.utc),
+        title=row.get("title"),
+        thread_content=row.get("thread_content"),
+        community_name=row.get("community_name"),
+        community_id=row.get("community_id"),
+    )
+    conversation_id = await Submitter().submit(post)
+    _supabase().table("discovered_posts").update(
+        {"status": "submitted", "conversation_id": conversation_id}
+    ).eq("id", row["id"]).execute()
+    return conversation_id
+
+
 @router.post("/posts/{post_id}/submit")
 async def submit_post(post_id: str):
     try:
@@ -195,26 +218,75 @@ async def submit_post(post_id: str):
         row = rows[0]
         if row.get("conversation_id"):
             return ok({"conversation_id": row["conversation_id"], "status": "already_submitted"})
-        post = UniversalPost(
-            platform=row["platform"],
-            post_id=row["post_id"],
-            post_url=row.get("post_url") or "",
-            author_name=row.get("author_name") or "",
-            author_id=row.get("author_id") or "",
-            content=row["content"],
-            posted_at=datetime.now(timezone.utc),
-            title=row.get("title"),
-            thread_content=row.get("thread_content"),
-            community_name=row.get("community_name"),
-            community_id=row.get("community_id"),
-        )
-        conversation_id = await Submitter().submit(post)
-        _supabase().table("discovered_posts").update(
-            {"status": "submitted", "conversation_id": conversation_id}
-        ).eq("id", post_id).execute()
+        conversation_id = await _submit_discovered_row(row)
         return ok({"conversation_id": conversation_id, "status": "submitted"}, 202)
     except Exception as exc:
         return fail(f"Failed to submit post: {exc}", 500)
+
+
+@router.post("/reevaluate")
+async def reevaluate_backlog(body: dict | None = None):
+    """Re-apply the current relevance/engagement thresholds to already-scored
+    posts sitting in `filtered_out`, and submit up to `limit` that now pass —
+    using their stored scores (no re-fetch, no new LLM calls). Lets settings
+    changes take effect on the backlog and surfaces fresh Feed conversations on
+    demand."""
+    try:
+        limit = int((body or {}).get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 100))
+
+    try:
+        settings = store.get_settings()
+        remaining_cap = max(
+            0, settings.max_conversations_per_day - store.daily_conversation_count()
+        )
+        if remaining_cap <= 0:
+            return ok({"submitted": 0, "requested": limit, "skipped_over_cap": limit,
+                       "reason": "daily limit reached"})
+
+        # Pull already-scored, not-yet-submitted backlog, best relevance first.
+        rows = (
+            _supabase()
+            .table("discovered_posts")
+            .select("*")
+            .eq("status", "filtered_out")
+            .is_("conversation_id", "null")
+            .order("relevance_score", desc=True)
+            .limit(500)
+            .execute()
+        ).data or []
+
+        ew = settings.engagement_weight
+        eligible = [
+            r for r in rows
+            if (r.get("relevance_score") or 0) >= settings.min_relevance_score
+            and (r.get("engagement_score") or 0) >= settings.min_engagement_score
+        ]
+        eligible.sort(
+            key=lambda r: (r.get("relevance_score") or 0) * (1 - ew)
+            + (r.get("engagement_score") or 0) * ew,
+            reverse=True,
+        )
+
+        want = min(limit, remaining_cap)
+        submitted = 0
+        for r in eligible[:want]:
+            try:
+                await _submit_discovered_row(r)
+                submitted += 1
+            except Exception:
+                continue
+
+        return ok({
+            "submitted": submitted,
+            "requested": limit,
+            "eligible": len(eligible),
+            "skipped_over_cap": max(0, limit - remaining_cap),
+        })
+    except Exception as exc:
+        return fail(f"Failed to re-evaluate backlog: {exc}", 500)
 
 
 # ── Communities ───────────────────────────────────────

@@ -80,6 +80,7 @@ function OverviewTab() {
   const [status, setStatus] = useState<DiscoveryStatus | null>(null);
   const [runs, setRuns] = useState<DiscoveryRun[]>([]);
   const [triggering, setTriggering] = useState(false);
+  const [reevaluating, setReevaluating] = useState(false);
   const [runningRun, setRunningRun] = useState<DiscoveryRun | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -159,6 +160,29 @@ function OverviewTab() {
     }
   };
 
+  const reevaluate = async () => {
+    setReevaluating(true);
+    try {
+      const res = await discoveryApi.reevaluate(10);
+      if (res.submitted > 0) {
+        showToast(
+          "success",
+          `Submitted ${res.submitted} conversation${res.submitted === 1 ? "" : "s"} from the backlog — check the Feed.`
+        );
+      } else {
+        showToast(
+          "info",
+          "No backlog posts passed the current thresholds. Loosen relevance/engagement in Settings and try again."
+        );
+      }
+      load();
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Re-evaluate failed");
+    } finally {
+      setReevaluating(false);
+    }
+  };
+
   const toggleEnabled = async () => {
     if (!status) return;
     try {
@@ -191,6 +215,15 @@ function OverviewTab() {
           disabled={!!runningRun}
         >
           {status.is_enabled ? "Pause Discovery" : "Enable Discovery"}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={reevaluate}
+          loading={reevaluating}
+          disabled={!!runningRun}
+          title="Submit ~10 already-scored posts from the backlog that pass current thresholds"
+        >
+          Re-evaluate backlog
         </Button>
       </div>
 

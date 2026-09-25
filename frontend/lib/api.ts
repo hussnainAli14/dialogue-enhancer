@@ -308,6 +308,11 @@ export const discoveryApi = {
   trigger: () =>
     unwrap<{ run_id: string; status: string }>(client.post("/discovery/trigger")),
 
+  reevaluate: (limit = 10) =>
+    unwrap<{ submitted: number; requested: number; eligible: number; skipped_over_cap: number }>(
+      client.post("/discovery/reevaluate", { limit })
+    ),
+
   getRuns: (params: { status?: string; trigger_type?: string; page?: number } = {}) =>
     unwrap<{ page: number; page_size: number; total: number; runs: DiscoveryRun[] }>(
       client.get("/discovery/runs", { params })

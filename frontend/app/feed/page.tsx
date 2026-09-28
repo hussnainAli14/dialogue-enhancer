@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Inbox, MailCheck, RefreshCw } from "lucide-react";
-import { conversationsApi, discoveryApi, draftsApi, postsApi } from "@/lib/api";
+import { conversationsApi, discoveryApi, postsApi } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
 import { isWithinLast24Hours } from "@/lib/utils";
 import { useConversations } from "@/hooks/useConversations";
@@ -115,7 +115,13 @@ export default function FeedPage() {
   const replies = useMemo(
     () =>
       loadedConvos
-        .filter((c) => c.is_reply_to_me && !c.has_posted_reply && !dismissed.has(c.id))
+        .filter(
+          (c) =>
+            c.is_reply_to_me &&
+            !c.has_posted_reply &&
+            c.analysis_status !== "dismissed" &&
+            !dismissed.has(c.id)
+        )
         .sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at)),
     [loadedConvos, dismissed]
   );
@@ -193,12 +199,7 @@ export default function FeedPage() {
     // Optimistic removal
     setDismissed((prev) => new Set(prev).add(conversation.id));
     try {
-      const detail = await conversationsApi.getConversation(conversation.id);
-      await Promise.all(
-        detail.drafts
-          .filter((d) => d.status === "pending")
-          .map((d) => draftsApi.rejectDraft(d.id, "dismissed from feed"))
-      );
+      await conversationsApi.dismissConversation(conversation.id);
       showToast("info", "Conversation dismissed.");
     } catch {
       setDismissed((prev) => {

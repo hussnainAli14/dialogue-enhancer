@@ -124,6 +124,11 @@ export const conversationsApi = {
       })
     ),
 
+  dismissConversation: (id: string) =>
+    unwrap<{ conversation_id: string; status: string }>(
+      client.post(`/conversations/${id}/dismiss`, null)
+    ),
+
   deleteConversation: (id: string) =>
     unwrap<{ deleted: boolean; conversation_id: string }>(
       client.delete(`/conversations/${id}`)

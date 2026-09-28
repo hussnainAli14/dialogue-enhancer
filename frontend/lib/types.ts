@@ -49,7 +49,8 @@ export type AnalysisStatus =
   | "analysed"
   | "skipped"
   | "error"
-  | "reply_pending";
+  | "reply_pending"
+  | "dismissed";
 
 export interface Conversation {
   id: string;

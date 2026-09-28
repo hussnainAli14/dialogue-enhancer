@@ -147,6 +147,30 @@ async def generate_drafts(
         return fail("Failed to start draft generation", 500)
 
 
+@router.post("/{conversation_id}/dismiss")
+async def dismiss_conversation(conversation_id: str):
+    """Permanently remove a conversation from the feed. Marks it 'dismissed'
+    (feed only shows 'analysed') and rejects any pending drafts so it does not
+    reappear on reload."""
+    try:
+        supabase = get_supabase()
+        conv = (
+            supabase.table("conversations").select("id")
+            .eq("id", conversation_id).limit(1).execute()
+        ).data
+        if not conv:
+            return fail("Conversation not found", 404)
+        supabase.table("conversations").update({"analysis_status": "dismissed"}).eq(
+            "id", conversation_id
+        ).execute()
+        supabase.table("response_drafts").update({"status": "rejected"}).eq(
+            "conversation_id", conversation_id
+        ).eq("status", "pending").execute()
+        return ok({"conversation_id": conversation_id, "status": "dismissed"})
+    except Exception:
+        return fail("Failed to dismiss conversation", 500)
+
+
 @router.get("/{conversation_id}")
 async def get_conversation(conversation_id: str):
     try:

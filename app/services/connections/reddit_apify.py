@@ -121,6 +121,10 @@ def _to_post(item: dict, since: datetime) -> UniversalPost | None:
     up_votes = int(_first(item, "upVotes", "score", "ups", default=0) or 0)
     num_comments = int(_first(item, "numberOfComments", "numComments", "num_comments", default=0) or 0)
 
+    # For Reddit the title is often the whole point (a question), so keep both:
+    # title + body reads best and gives analysis the full signal.
+    content = f"{title}\n\n{body}".strip() if (title and body) else (body or title)
+
     return UniversalPost(
         platform="reddit",
         post_id=post_id,
@@ -128,7 +132,7 @@ def _to_post(item: dict, since: datetime) -> UniversalPost | None:
         author_name=author,
         author_id=author,
         title=title or None,
-        content=body or title,
+        content=content,
         thread_content=None,
         community_name=f"r/{community}" if community else None,
         community_id=community or None,

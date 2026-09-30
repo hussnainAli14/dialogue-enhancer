@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings
 from app.schemas.connections import PLATFORMS
 from app.services import token_store
 from app.services.connections.base import BaseConnector, UniversalPost
@@ -77,9 +78,20 @@ class PlatformFetchService:
         limit: int = 20,
     ) -> list[UniversalPost]:
         connection = token_store.get_connection(platform)
-        if not connection or connection.status not in ("connected", "expired"):
-            return []
         connector = get_connector(platform)
+
+        # Reddit via Apify needs no OAuth connection — scrape directly.
+        apify_reddit = platform == "reddit" and settings.APIFY_TOKEN
+        if not apify_reddit and (
+            not connection or connection.status not in ("connected", "expired")
+        ):
+            return []
+        if apify_reddit and (not connection or connection.status not in ("connected", "expired")):
+            try:
+                posts = await connector.fetch_posts(connection, keywords, communities, since, limit)
+                return posts
+            except Exception:
+                return []
 
         # Refresh proactively if the token is close to expiry.
         if _expires_soon(connection.token_expires_at) and connection.refresh_token:
@@ -115,6 +127,9 @@ class PlatformFetchService:
         connected = [
             c.platform for c in token_store.get_all_connections() if c.status == "connected"
         ]
+        # Reddit works through Apify without a connection row — add it in.
+        if settings.APIFY_TOKEN and "reddit" not in connected:
+            connected.append("reddit")
         tasks = [
             self.fetch_from_platform(
                 platform,

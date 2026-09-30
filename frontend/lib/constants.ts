@@ -2,19 +2,21 @@
 export const AUTO_POST_PLATFORMS = [
   "bluesky",
   "mastodon",
-  "reddit",
   "discord",
   "threads",
   "youtube",
 ] as const;
 
-/** Platforms where the author copies the draft and posts it themselves. */
+/** Platforms where the author copies the draft and posts it themselves.
+ * Reddit is discovered via Apify (read-only); replying needs the approval-
+ * gated Reddit API, so posting stays manual. */
 export const MANUAL_POST_PLATFORMS = [
   "linkedin",
   "facebook",
   "instagram",
   "twitter",
   "x",
+  "reddit",
 ] as const;
 
 export const PLATFORMS = [

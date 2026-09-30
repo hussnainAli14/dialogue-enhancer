@@ -111,6 +111,102 @@ def active_keywords(limit: int | None = None) -> list[str]:
         return []
 
 
+def seed_reddit_subreddits(found: list[dict], activate_top: int = 5) -> int:
+    """Insert newly discovered subreddits into monitored_communities. Only adds
+    rows that don't exist yet — never touches ones the user has already chosen
+    (so a user-deactivated subreddit stays off). The most active `activate_top`
+    of the *new* ones are inserted active so scraping starts immediately; the
+    rest are inserted inactive but visible in Community Manager. Returns the
+    number newly inserted."""
+    if not found:
+        return 0
+    supabase = get_supabase()
+    try:
+        existing = {
+            r["community_id"]
+            for r in (
+                supabase.table("monitored_communities")
+                .select("community_id")
+                .eq("platform", "reddit")
+                .execute()
+            ).data
+            or []
+        }
+        new_rows = []
+        rank = 0
+        for c in found:
+            cid = c.get("community_id")
+            if not cid or cid in existing:
+                continue
+            new_rows.append(
+                {
+                    "platform": "reddit",
+                    "community_id": cid,
+                    "community_name": c.get("community_name") or f"r/{cid}",
+                    "keywords": [],
+                    "is_active": rank < activate_top,
+                    "priority": 1,
+                }
+            )
+            rank += 1
+        if new_rows:
+            supabase.table("monitored_communities").insert(new_rows).execute()
+        return len(new_rows)
+    except Exception:
+        return 0
+
+
+def reddit_subreddits_last_refresh() -> datetime | None:
+    """When the monitored reddit subreddits were last discovered/refreshed —
+    the latest updated_at across reddit rows. None if there are no reddit rows."""
+    try:
+        rows = (
+            get_supabase()
+            .table("monitored_communities")
+            .select("updated_at")
+            .eq("platform", "reddit")
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data or []
+        if not rows or not rows[0].get("updated_at"):
+            return None
+        ts = datetime.fromisoformat(rows[0]["updated_at"].replace("Z", "+00:00"))
+        return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def keywords_changed_since(ts: datetime) -> bool:
+    """True if any active keyword was added after `ts` — so the subreddit list
+    should be re-discovered to reflect the new keyword."""
+    try:
+        rows = (
+            get_supabase()
+            .table("discovery_keywords")
+            .select("created_at")
+            .eq("is_active", True)
+            .gt("created_at", ts.isoformat())
+            .limit(1)
+            .execute()
+        ).data or []
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def touch_reddit_refresh() -> None:
+    """Mark the reddit subreddits as freshly refreshed (bumps updated_at) so a
+    refresh that found no *new* subreddits still resets the staleness clock —
+    stops repeated manual runs from re-paying for discovery."""
+    try:
+        get_supabase().table("monitored_communities").update(
+            {"updated_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("platform", "reddit").execute()
+    except Exception:
+        pass
+
+
 def active_communities() -> list[dict]:
     try:
         return (

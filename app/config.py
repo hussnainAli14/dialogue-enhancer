@@ -44,6 +44,11 @@ class Settings:
     REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "")
     REDDIT_REDIRECT_URI: str = os.getenv("REDDIT_REDIRECT_URI", "")
     REDDIT_USER_AGENT: str = os.getenv("REDDIT_USER_AGENT", "AI Dialogue Enhancer/1.0")
+    # Apify — scrapes Reddit without the (approval-gated) Reddit API. When
+    # APIFY_TOKEN is set, discovery pulls Reddit posts via this actor instead
+    # of PRAW, so Reddit works with no OAuth connection.
+    APIFY_TOKEN: str = os.getenv("APIFY_TOKEN", "")
+    APIFY_REDDIT_ACTOR: str = os.getenv("APIFY_REDDIT_ACTOR", "trudax~reddit-scraper")
 
     BLUESKY_HANDLE: str = os.getenv("BLUESKY_HANDLE", "")
     BLUESKY_APP_PASSWORD: str = os.getenv("BLUESKY_APP_PASSWORD", "")

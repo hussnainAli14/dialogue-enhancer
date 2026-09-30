@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings as config_settings
 from app.database import get_supabase, log_task
 from app.models.discovery import DiscoveryRunResult
 from app.schemas.connections import PLATFORMS
@@ -56,6 +57,35 @@ class DiscoveryWorker:
         self.scorer = Scorer()
         self.submitter = Submitter()
 
+    # Re-discover subreddits at most this often. Between refreshes, runs reuse
+    # the cached subreddit list — so clicking Discovery repeatedly doesn't re-pay
+    # for subreddit discovery. The daily scheduled run naturally refreshes it.
+    REDDIT_REFRESH_HOURS = 20
+
+    async def _refresh_reddit_subreddits(self, keywords: list[str]) -> None:
+        """Discover subreddits from ALL active keywords and add them to monitored
+        communities. Cached: only re-discovers when the list is missing, older
+        than REDDIT_REFRESH_HOURS, or a keyword was added since the last refresh.
+        Best-effort — never breaks a run."""
+        try:
+            if not keywords:
+                return
+            last = store.reddit_subreddits_last_refresh()
+            stale = (
+                last is None
+                or (_now() - last) > timedelta(hours=self.REDDIT_REFRESH_HOURS)
+                or store.keywords_changed_since(last)
+            )
+            if not stale:
+                return
+            from app.services.connections.reddit_apify import search_subreddits_via_apify
+
+            found = await search_subreddits_via_apify(keywords)
+            store.seed_reddit_subreddits(found)
+            store.touch_reddit_refresh()
+        except Exception:
+            pass
+
     async def run(self, trigger_type: str = "scheduled", run_id: str | None = None) -> DiscoveryRunResult:
         run_id = run_id or self._create_run(trigger_type)
         started = time.monotonic()
@@ -83,6 +113,12 @@ class DiscoveryWorker:
                 for c in token_store.get_all_connections()
                 if c.status == "connected" and c.platform in PLATFORMS
             }
+            # Reddit is reachable through Apify without an OAuth connection.
+            if config_settings.APIFY_TOKEN:
+                connected.add("reddit")
+                # Discover/refresh the subreddits to scrape from the active
+                # keywords (cached — see method; only re-discovers when stale).
+                await self._refresh_reddit_subreddits(keywords)
 
             # Approved communities add per-platform targets plus their own keywords.
             communities = store.active_communities()

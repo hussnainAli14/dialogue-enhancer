@@ -138,6 +138,25 @@ class RedditConnector(BaseConnector):
     async def search_communities(self, keywords: list[str], limit: int = 20):
         from app.services.community import DiscoveredCommunity
 
+        # When Apify is configured, discover subreddits through it (no Reddit
+        # OAuth needed). Otherwise fall back to the PRAW search below.
+        if settings.APIFY_TOKEN:
+            from app.services.connections.reddit_apify import search_subreddits_via_apify
+
+            found = await search_subreddits_via_apify(keywords, limit)
+            return [
+                DiscoveredCommunity(
+                    platform="reddit",
+                    community_id=c["community_id"],
+                    community_name=c["community_name"],
+                    community_url=f"https://reddit.com/r/{c['community_id']}",
+                    member_count=c["member_count"] or None,
+                    activity_level=c["activity_level"],
+                    discovered_via_keywords=list(keywords),
+                )
+                for c in found
+            ]
+
         def _work():
             reddit = self._client()
             reddit.read_only = True
@@ -207,6 +226,13 @@ class RedditConnector(BaseConnector):
         since: datetime,
         limit: int,
     ) -> list[UniversalPost]:
+        # When an Apify token is configured, scrape Reddit via Apify instead of
+        # the approval-gated Reddit API. Works with no OAuth connection.
+        if settings.APIFY_TOKEN:
+            from app.services.connections.reddit_apify import fetch_reddit_via_apify
+
+            return await fetch_reddit_via_apify(keywords, communities, since, limit)
+
         def _work() -> list[UniversalPost]:
             reddit = self._client(refresh_token=connection.refresh_token)
             reddit.read_only = True

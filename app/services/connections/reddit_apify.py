@@ -192,54 +192,26 @@ async def _run_many(payloads: list[dict]) -> list:
     return items
 
 
-def _post_records(items: list) -> list[dict]:
-    return [
-        i for i in items
-        if isinstance(i, dict)
-        and str(_first(i, "dataType", "type", default="post")).lower()
-        in ("post", "posts", "submission")
-    ]
-
-
-def _has_body(item: dict) -> bool:
-    body = _clean_body(html.unescape(str(_first(item, "body", "text", "selftext", "content", default=""))))
-    return len(body) > 0
-
-
 async def _scrape_subreddit(sub: str) -> list:
-    """Scrape one subreddit's top posts. Retries if the result comes back
-    body-less — the proxy intermittently returns title-only listings (no
-    selftext); a retry usually returns the full bodies. Keeps the best (most
-    posts-with-body) attempt if all are degraded."""
-    # Scrape the subreddit's RECENT posts (not all-time "top", which never
-    # changes → every run re-fetches the same posts → all duplicates). "new"
-    # gives fresh posts each run; the subreddit is already on-topic so quality
-    # holds, and the relevance scorer still filters.
-    # No "time" filter — it returns nothing when combined with "new" sorting.
-    # "new" already gives the most recent posts; the pipeline's since-filter
-    # (_to_post) drops anything older than the lookback window.
-    payload = {
-        "type": "posts",
-        "startUrls": [{"url": f"https://www.reddit.com/r/{sub}/new/"}],
-        "sort": "new",
-        "maxItems": _SUBREDDIT_ITEMS,
-        "maxPostCount": _SUBREDDIT_ITEMS,
-    }
-    best: list = []
-    best_bodies = -1
-    for attempt in range(3):
-        items = await _run_actor(payload)
-        posts = _post_records(items)
-        bodies = sum(1 for p in posts if _has_body(p))
-        # Accept once at least half the posts carry a body (some are legit
-        # link/image posts with no selftext).
-        if posts and bodies >= max(1, len(posts) // 2):
-            return items
-        if bodies > best_bodies:
-            best, best_bodies = items, bodies
-        if attempt < 2:
-            await asyncio.sleep(4)
-    return best
+    """Scrape one subreddit's recent posts in a SINGLE request. Isolated single
+    calls reliably return full post bodies; firing retries/bursts instead makes
+    the Apify proxy throttle and return title-only listings — so we deliberately
+    do one call per subreddit and keep the overall rate low (sequential + a gap
+    between subreddits in the caller).
+
+    Uses /new (recent) not /top (all-time) — top never changes, so every run
+    would re-fetch the same posts and drop them all as duplicates. No "time"
+    filter either: it returns nothing combined with "new" sorting, and the
+    pipeline's since-filter (_to_post) already drops anything too old."""
+    return await _run_actor(
+        {
+            "type": "posts",
+            "startUrls": [{"url": f"https://www.reddit.com/r/{sub}/new/"}],
+            "sort": "new",
+            "maxItems": _SUBREDDIT_ITEMS,
+            "maxPostCount": _SUBREDDIT_ITEMS,
+        }
+    )
 
 
 def _dedupe_posts(items: list, since: datetime, limit: int) -> list[UniversalPost]:

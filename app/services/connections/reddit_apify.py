@@ -28,7 +28,11 @@ from app.services.connections.base import UniversalPost
 _RUN_TIMEOUT_S = 150  # per single-term run-sync wait
 _CONCURRENCY = 6  # parallel actor runs — higher (e.g. 12) overruns the actor's
 # effective concurrent capacity and every run times out; 6 is reliable.
-_MAX_SUBREDDITS = 10  # subreddits scraped per discovery run
+_SCRAPE_CONCURRENCY = 1  # subreddit scraping runs sequentially — ANY parallelism
+# degrades the proxy into returning title-only posts (no body/selftext). Each
+# isolated call reliably returns full post bodies. Slower, but complete.
+_MAX_SUBREDDITS = 10  # subreddits scraped per discovery run (covers the full
+# active list; scraped sequentially so a run takes ~10-12 min)
 _SUBREDDIT_ITEMS = 30  # posts per subreddit
 _MAX_SEARCHES = 8  # keyword terms in the general-Reddit fallback path
 _MAX_ITEMS = 15  # posts per keyword (fallback)
@@ -188,6 +192,56 @@ async def _run_many(payloads: list[dict]) -> list:
     return items
 
 
+def _post_records(items: list) -> list[dict]:
+    return [
+        i for i in items
+        if isinstance(i, dict)
+        and str(_first(i, "dataType", "type", default="post")).lower()
+        in ("post", "posts", "submission")
+    ]
+
+
+def _has_body(item: dict) -> bool:
+    body = _clean_body(html.unescape(str(_first(item, "body", "text", "selftext", "content", default=""))))
+    return len(body) > 0
+
+
+async def _scrape_subreddit(sub: str) -> list:
+    """Scrape one subreddit's top posts. Retries if the result comes back
+    body-less — the proxy intermittently returns title-only listings (no
+    selftext); a retry usually returns the full bodies. Keeps the best (most
+    posts-with-body) attempt if all are degraded."""
+    # Scrape the subreddit's RECENT posts (not all-time "top", which never
+    # changes → every run re-fetches the same posts → all duplicates). "new"
+    # gives fresh posts each run; the subreddit is already on-topic so quality
+    # holds, and the relevance scorer still filters.
+    # No "time" filter — it returns nothing when combined with "new" sorting.
+    # "new" already gives the most recent posts; the pipeline's since-filter
+    # (_to_post) drops anything older than the lookback window.
+    payload = {
+        "type": "posts",
+        "startUrls": [{"url": f"https://www.reddit.com/r/{sub}/new/"}],
+        "sort": "new",
+        "maxItems": _SUBREDDIT_ITEMS,
+        "maxPostCount": _SUBREDDIT_ITEMS,
+    }
+    best: list = []
+    best_bodies = -1
+    for attempt in range(3):
+        items = await _run_actor(payload)
+        posts = _post_records(items)
+        bodies = sum(1 for p in posts if _has_body(p))
+        # Accept once at least half the posts carry a body (some are legit
+        # link/image posts with no selftext).
+        if posts and bodies >= max(1, len(posts) // 2):
+            return items
+        if bodies > best_bodies:
+            best, best_bodies = items, bodies
+        if attempt < 2:
+            await asyncio.sleep(4)
+    return best
+
+
 def _dedupe_posts(items: list, since: datetime, limit: int) -> list[UniversalPost]:
     posts: list[UniversalPost] = []
     seen: set[str] = set()
@@ -221,24 +275,21 @@ async def fetch_reddit_via_apify(
 
     posts: list[UniversalPost] = []
     if subreddits:
-        # Primary: scrape known-relevant subreddits in parallel — one run each.
-        # Sample so runs rotate across the full set when there are many.
+        # Primary: scrape known-relevant subreddits (gentle concurrency + a
+        # body-aware retry so posts come back with their full text, not just the
+        # title). Sample so runs rotate across the full set when there are many.
         chosen = random.sample(subreddits, min(_MAX_SUBREDDITS, len(subreddits)))
-        items = await _run_many(
-            [
-                {
-                    "type": "posts",
-                    "startUrls": [{"url": f"https://www.reddit.com/r/{s}/top/"}],
-                    # Top posts in the lookback window = the community's best,
-                    # highest-engagement conversations.
-                    "sort": "top",
-                    "time": window,
-                    "maxItems": _SUBREDDIT_ITEMS,
-                    "maxPostCount": _SUBREDDIT_ITEMS,
-                }
-                for s in chosen
-            ]
-        )
+        sem = asyncio.Semaphore(_SCRAPE_CONCURRENCY)
+
+        async def _one(s: str) -> list:
+            async with sem:
+                return await _scrape_subreddit(s)
+
+        results = await asyncio.gather(*[_one(s) for s in chosen], return_exceptions=True)
+        items: list = []
+        for res in results:
+            if isinstance(res, list):
+                items.extend(res)
         posts = _dedupe_posts(items, since, limit)
         if len(posts) >= _MIN_SUBREDDIT_POSTS:
             return posts

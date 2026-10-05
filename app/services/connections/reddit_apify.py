@@ -28,12 +28,12 @@ from app.services.connections.base import UniversalPost
 _RUN_TIMEOUT_S = 150  # per single-term run-sync wait
 _CONCURRENCY = 6  # parallel actor runs — higher (e.g. 12) overruns the actor's
 # effective concurrent capacity and every run times out; 6 is reliable.
-_SCRAPE_CONCURRENCY = 1  # subreddit scraping runs sequentially — ANY parallelism
-# degrades the proxy into returning title-only posts (no body/selftext). Each
-# isolated call reliably returns full post bodies. Slower, but complete.
-_MAX_SUBREDDITS = 10  # subreddits scraped per discovery run (covers the full
-# active list; scraped sequentially so a run takes ~10-12 min)
-_SUBREDDIT_ITEMS = 30  # posts per subreddit
+_SCRAPE_CONCURRENCY = 1  # scrape subreddits one at a time — parallel scraping
+# degrades the proxy into title-only (body-less) responses, even at low maxItems.
+_MAX_SUBREDDITS = 10  # subreddits scraped per discovery run (covers full list)
+_SUBREDDIT_ITEMS = 15  # posts per subreddit — the actor fetches FULL post bodies
+# up to ~15 items, then switches to title-only listing mode above that. Keep at
+# or below 15 so every post comes back with its body/selftext.
 _MAX_SEARCHES = 8  # keyword terms in the general-Reddit fallback path
 _MAX_ITEMS = 15  # posts per keyword (fallback)
 _SEED_KEYWORDS = 25  # keywords used to discover subreddits during seeding

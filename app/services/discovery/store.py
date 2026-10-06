@@ -111,13 +111,13 @@ def active_keywords(limit: int | None = None) -> list[str]:
         return []
 
 
-def seed_reddit_subreddits(found: list[dict], activate_top: int = 5) -> int:
+def seed_reddit_subreddits(found: list[dict], min_matches: int = 2) -> int:
     """Insert newly discovered subreddits into monitored_communities. Only adds
     rows that don't exist yet — never touches ones the user has already chosen
-    (so a user-deactivated subreddit stays off). The most active `activate_top`
-    of the *new* ones are inserted active so scraping starts immediately; the
-    rest are inserted inactive but visible in Community Manager. Returns the
-    number newly inserted."""
+    (so a user-deactivated subreddit stays off). A subreddit is inserted ACTIVE
+    (scraped) only if it matched at least `min_matches` distinct keywords (the
+    `weekly_active` field = that count); one-off matches are inserted inactive but
+    visible in Community Manager. Returns the number newly inserted."""
     if not found:
         return 0
     supabase = get_supabase()
@@ -133,7 +133,6 @@ def seed_reddit_subreddits(found: list[dict], activate_top: int = 5) -> int:
             or []
         }
         new_rows = []
-        rank = 0
         for c in found:
             cid = c.get("community_id")
             if not cid or cid in existing:
@@ -144,11 +143,10 @@ def seed_reddit_subreddits(found: list[dict], activate_top: int = 5) -> int:
                     "community_id": cid,
                     "community_name": c.get("community_name") or f"r/{cid}",
                     "keywords": [],
-                    "is_active": rank < activate_top,
+                    "is_active": (c.get("weekly_active") or 0) >= min_matches,
                     "priority": 1,
                 }
             )
-            rank += 1
         if new_rows:
             supabase.table("monitored_communities").insert(new_rows).execute()
         return len(new_rows)

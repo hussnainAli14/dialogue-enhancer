@@ -30,7 +30,7 @@ _CONCURRENCY = 6  # parallel actor runs — higher (e.g. 12) overruns the actor'
 # effective concurrent capacity and every run times out; 6 is reliable.
 _SCRAPE_CONCURRENCY = 1  # scrape subreddits one at a time — parallel scraping
 # degrades the proxy into title-only (body-less) responses, even at low maxItems.
-_MAX_SUBREDDITS = 10  # subreddits scraped per discovery run (covers full list)
+_MAX_SUBREDDITS = 5  # subreddits scraped per discovery run (covers full list)
 _SUBREDDIT_ITEMS = 15  # posts per subreddit — the actor fetches FULL post bodies
 # up to ~15 items, then switches to title-only listing mode above that. Keep at
 # or below 15 so every post comes back with its body/selftext.
@@ -38,6 +38,21 @@ _MAX_SEARCHES = 8  # keyword terms in the general-Reddit fallback path
 _MAX_ITEMS = 15  # posts per keyword (fallback)
 _SEED_KEYWORDS = 25  # keywords used to discover subreddits during seeding
 _MIN_SUBREDDIT_POSTS = 5  # below this, top up from a general-Reddit keyword search
+_MIN_KEYWORD_MATCHES = 2  # a subreddit must match this many DISTINCT keywords to
+# be auto-activated — drops one-off broad matches (e.g. r/HeistTeams, r/psychology
+# showing up for a single generic keyword).
+
+# Generic / off-fit subreddits that match many topics loosely but aren't the
+# right audience — never seed these (lowercased, matched exactly).
+_SUBREDDIT_BLOCKLIST = {
+    "askreddit", "askanything", "ask", "nostupidquestions", "tooafraidtoask",
+    "explainlikeimfive", "askmenadvice", "askwomenadvice", "advice",
+    "relationship_advice", "relationships", "cptsd", "ptsd", "mentalhealth",
+    "depression", "anxiety", "offmychest", "trueoffmychest", "rant", "vent",
+    "teenagers", "memes", "funny", "pics", "videos", "news", "worldnews",
+    "heistteams", "therapists", "teachinguk", "prevets", "upsc", "disability",
+    "spiritualawakening", "peersupportspecialist",
+}
 
 
 def _actor_endpoint() -> str:
@@ -295,49 +310,63 @@ async def fetch_reddit_via_apify(
     return posts[:limit]
 
 
-async def search_subreddits_via_apify(keywords: list[str], limit: int = 12) -> list[dict]:
-    """Discover subreddits relevant to the given keywords. The actor has no
-    subreddit-search mode, so we keyword-search posts and tally which subreddits
-    they come from — the subreddits that recur most for these keywords are the
-    on-topic ones. Returns community dicts ranked by hit count, most relevant
-    first. [] on failure or when no token is set."""
-    if not settings.APIFY_TOKEN:
-        return []
-    pool = list(dict.fromkeys(k for k in keywords if k))[:_SEED_KEYWORDS]
-    if not pool:
-        return []
-    # Search every keyword in parallel and tally which subreddits their posts
-    # come from — the subreddits that recur across many keywords are the most
-    # on-topic. Far better coverage than a single keyword.
-    items = await _run_many(
-        [
-            {
-                "type": "posts",
-                "searches": [k],
-                "sort": "relevance",
-                "time": "month",
-                "maxItems": 25,
-                "maxPostCount": 25,
-            }
-            for k in pool
-        ]
+async def _subreddits_for_keyword(keyword: str) -> set[str]:
+    """Search one keyword and return the DISTINCT (non-blocklisted) subreddits
+    its posts live in."""
+    items = await _run_actor(
+        {
+            "type": "posts",
+            "searches": [keyword],
+            "sort": "relevance",
+            "time": "month",
+            "maxItems": 25,
+            "maxPostCount": 25,
+        }
     )
-    counts: dict[str, int] = {}
+    subs: set[str] = set()
     for item in items:
         if not isinstance(item, dict):
             continue
         if str(_first(item, "dataType", "type", default="post")).lower() != "post":
             continue
         name = _norm_subreddit(str(_first(item, "communityName", "subreddit", default="")))
-        if name:
-            counts[name] = counts.get(name, 0) + 1
+        if name and name.lower() not in _SUBREDDIT_BLOCKLIST:
+            subs.add(name)
+    return subs
+
+
+async def search_subreddits_via_apify(keywords: list[str], limit: int = 12) -> list[dict]:
+    """Discover subreddits relevant to the given keywords. Searches each keyword
+    and counts how many DISTINCT keywords each subreddit appeared for — a sub
+    that recurs across several of your topics is genuinely relevant; a one-off
+    match (r/HeistTeams for a single broad keyword) is noise and gets dropped by
+    the caller's threshold. Blocklisted generic subs are excluded. Ranked by
+    distinct-keyword count. [] on failure or when no token is set."""
+    if not settings.APIFY_TOKEN:
+        return []
+    pool = list(dict.fromkeys(k for k in keywords if k))[:_SEED_KEYWORDS]
+    if not pool:
+        return []
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def _one(k: str) -> set[str]:
+        async with sem:
+            return await _subreddits_for_keyword(k)
+
+    results = await asyncio.gather(*[_one(k) for k in pool], return_exceptions=True)
+    counts: dict[str, int] = {}
+    for res in results:
+        if isinstance(res, set):
+            for name in res:
+                counts[name] = counts.get(name, 0) + 1
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     return [
         {
             "community_id": name,
             "community_name": f"r/{name}",
             "member_count": 0,
-            "weekly_active": hits,  # hit count stands in for relevance/activity
+            # distinct-keyword match count — how many of your topics this sub fits
+            "weekly_active": hits,
             "activity_level": "high" if hits >= 4 else "medium" if hits >= 2 else "low",
         }
         for name, hits in ranked[:limit]

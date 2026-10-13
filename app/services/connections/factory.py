@@ -80,18 +80,18 @@ class PlatformFetchService:
         connection = token_store.get_connection(platform)
         connector = get_connector(platform)
 
-        # Reddit and X discover via Apify with no OAuth connection — fetch directly.
+        # Reddit and X discover via Apify with no OAuth — fetch directly and skip
+        # all token/refresh logic. This must run regardless of any connection row
+        # (X may have a dead/expired OAuth connection whose refresh would fail and
+        # wrongly abort discovery).
         apify_discovery = platform in ("reddit", "x") and settings.APIFY_TOKEN
-        if not apify_discovery and (
-            not connection or connection.status not in ("connected", "expired")
-        ):
-            return []
-        if apify_discovery and (not connection or connection.status not in ("connected", "expired")):
+        if apify_discovery:
             try:
-                posts = await connector.fetch_posts(connection, keywords, communities, since, limit)
-                return posts
+                return await connector.fetch_posts(connection, keywords, communities, since, limit)
             except Exception:
                 return []
+        if not connection or connection.status not in ("connected", "expired"):
+            return []
 
         # Refresh proactively if the token is close to expiry.
         if _expires_soon(connection.token_expires_at) and connection.refresh_token:

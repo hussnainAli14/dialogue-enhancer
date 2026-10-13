@@ -115,30 +115,38 @@ def _engagement(up_votes: int, num_comments: int) -> float:
     return round(up + comments, 4)
 
 
+def _reddit_url(item: dict, post_id: str) -> str:
+    """Prefer the reddit permalink (always a reddit.com path) over `url`, which
+    is the external link for link-posts."""
+    permalink = _first(item, "permalink", default="")
+    if permalink:
+        p = str(permalink)
+        return p if p.startswith("http") else f"https://www.reddit.com{p}"
+    return _first(item, "url", "link", default="") or f"https://reddit.com/comments/{post_id}"
+
+
 def _to_post(item: dict, since: datetime) -> UniversalPost | None:
     # Skip anything that isn't a post (some actors also emit comments).
     data_type = str(_first(item, "dataType", "type", default="post")).lower()
     if data_type and data_type not in ("post", "posts", "submission"):
         return None
 
-    created = _parse_created(_first(item, "createdAt", "created", "created_utc"))
+    created = _parse_created(_first(item, "createdAt", "created", "created_utc", "createdAtIso"))
     if created < _aware(since):
         return None
 
-    post_id = str(_first(item, "id", "parsedId", "postId", default=""))
-    url = _first(item, "url", "link", "permalink", default="")
-    if not post_id and not url:
-        return None
+    post_id = str(_first(item, "id", "parsedId", "postId", "fullname", default=""))
     if not post_id:
-        post_id = url.rstrip("/").split("/")[-1]
+        return None
 
     title = html.unescape(str(_first(item, "title", default="")))
-    body = _clean_body(html.unescape(str(_first(item, "body", "text", "selftext", "content", default=""))))
-    community = _first(item, "communityName", "subreddit", "community", default="")
+    body = _clean_body(html.unescape(str(_first(item, "selftext", "body", "text", "content", default=""))))
+    community = _first(item, "subreddit", "communityName", "community", default="")
     community = str(community).replace("r/", "").strip("/ ")
-    author = str(_first(item, "username", "author", default="[deleted]")).replace("u/", "")
-    up_votes = int(_first(item, "upVotes", "score", "ups", default=0) or 0)
-    num_comments = int(_first(item, "numberOfComments", "numComments", "num_comments", default=0) or 0)
+    author = str(_first(item, "author", "username", default="[deleted]")).replace("u/", "")
+    up_votes = int(_first(item, "score", "upVotes", "ups", default=0) or 0)
+    num_comments = int(_first(item, "numComments", "numberOfComments", "num_comments", default=0) or 0)
+    url = _reddit_url(item, post_id)
 
     # For Reddit the title is often the whole point (a question), so keep both:
     # title + body reads best and gives analysis the full signal.
@@ -147,7 +155,7 @@ def _to_post(item: dict, since: datetime) -> UniversalPost | None:
     return UniversalPost(
         platform="reddit",
         post_id=post_id,
-        post_url=url or f"https://reddit.com/comments/{post_id}",
+        post_url=url,
         author_name=author,
         author_id=author,
         title=title or None,
@@ -166,11 +174,16 @@ def _norm_subreddit(name: str) -> str:
     return name.replace("r/", "").strip("/ ")
 
 
-async def _run_actor(payload: dict) -> list:
-    """POST a single actor run and return dataset items ([] on failure). Retries
-    once on an empty/failed result — the Apify proxy against Reddit intermittently
-    times out or returns nothing, and a second attempt usually succeeds."""
-    payload = {"skipComments": True, "proxy": {"useApifyProxy": True}, **payload}
+async def _run_queries(queries: list[str], max_items: int) -> list:
+    """Run the thirdwatch Reddit actor for a set of `queries` in a single run.
+    A query is a subreddit listing ("r/managers"), a search within a subreddit
+    ("r/managers: burnout"), or a plain-text search across Reddit ("leadership").
+    One run handles many queries, returning posts with score, numComments and
+    selftext. Retries once on empty/failure. Returns [] on failure."""
+    queries = [q for q in queries if q]
+    if not queries:
+        return []
+    payload = {"queries": queries, "maxItems": max_items}
     for attempt in range(2):
         try:
             async with httpx.AsyncClient(timeout=_RUN_TIMEOUT_S + 20) as http:
@@ -188,45 +201,6 @@ async def _run_actor(payload: dict) -> list:
         if attempt == 0:
             await asyncio.sleep(3)
     return []
-
-
-async def _run_many(payloads: list[dict]) -> list:
-    """Run several actor runs in parallel (bounded by _CONCURRENCY) and return
-    all dataset items flattened. Failures are skipped."""
-    sem = asyncio.Semaphore(_CONCURRENCY)
-
-    async def _one(p: dict) -> list:
-        async with sem:
-            return await _run_actor(p)
-
-    results = await asyncio.gather(*[_one(p) for p in payloads], return_exceptions=True)
-    items: list = []
-    for res in results:
-        if isinstance(res, list):
-            items.extend(res)
-    return items
-
-
-async def _scrape_subreddit(sub: str) -> list:
-    """Scrape one subreddit's recent posts in a SINGLE request. Isolated single
-    calls reliably return full post bodies; firing retries/bursts instead makes
-    the Apify proxy throttle and return title-only listings — so we deliberately
-    do one call per subreddit and keep the overall rate low (sequential + a gap
-    between subreddits in the caller).
-
-    Uses /new (recent) not /top (all-time) — top never changes, so every run
-    would re-fetch the same posts and drop them all as duplicates. No "time"
-    filter either: it returns nothing combined with "new" sorting, and the
-    pipeline's since-filter (_to_post) already drops anything too old."""
-    return await _run_actor(
-        {
-            "type": "posts",
-            "startUrls": [{"url": f"https://www.reddit.com/r/{sub}/new/"}],
-            "sort": "new",
-            "maxItems": _SUBREDDIT_ITEMS,
-            "maxPostCount": _SUBREDDIT_ITEMS,
-        }
-    )
 
 
 def _dedupe_posts(items: list, since: datetime, limit: int) -> list[UniversalPost]:
@@ -257,50 +231,28 @@ async def fetch_reddit_via_apify(
     if not settings.APIFY_TOKEN:
         return []
 
-    window = _lookback_window(since)
     subreddits = [_norm_subreddit(c) for c in communities if c]
 
     posts: list[UniversalPost] = []
     if subreddits:
-        # Primary: scrape known-relevant subreddits (gentle concurrency + a
-        # body-aware retry so posts come back with their full text, not just the
-        # title). Sample so runs rotate across the full set when there are many.
+        # Primary: scrape known-relevant subreddits. thirdwatch handles many
+        # subreddits in ONE run (queries=["r/sub", ...]), returning posts with
+        # score, numComments and full selftext — no per-subreddit throttling.
         chosen = random.sample(subreddits, min(_MAX_SUBREDDITS, len(subreddits)))
-        sem = asyncio.Semaphore(_SCRAPE_CONCURRENCY)
-
-        async def _one(s: str) -> list:
-            async with sem:
-                return await _scrape_subreddit(s)
-
-        results = await asyncio.gather(*[_one(s) for s in chosen], return_exceptions=True)
-        items: list = []
-        for res in results:
-            if isinstance(res, list):
-                items.extend(res)
+        items = await _run_queries(
+            [f"r/{s}" for s in chosen], max_items=len(chosen) * _SUBREDDIT_ITEMS
+        )
         posts = _dedupe_posts(items, since, limit)
         if len(posts) >= _MIN_SUBREDDIT_POSTS:
             return posts
 
     # Fallback / top-up: subreddits returned too little (or none known yet) —
-    # search across all of Reddit by keyword in parallel (relevance sort beats
-    # "new" for match quality) and merge, de-duplicating against what we have.
+    # plain-text search across all of Reddit, merged and de-duplicated.
     pool = list(dict.fromkeys(k for k in keywords if k))
     if not pool:
         return posts
     searches = random.sample(pool, min(_MAX_SEARCHES, len(pool)))
-    items = await _run_many(
-        [
-            {
-                "type": "posts",
-                "searches": [s],
-                "sort": "relevance",
-                "time": window,
-                "maxItems": _MAX_ITEMS,
-                "maxPostCount": _MAX_ITEMS,
-            }
-            for s in searches
-        ]
-    )
+    items = await _run_queries(searches, max_items=_MAX_SEARCHES * _MAX_ITEMS)
     seen = {p.post_id for p in posts}
     for p in _dedupe_posts(items, since, limit):
         if p.post_id not in seen:
@@ -310,55 +262,35 @@ async def fetch_reddit_via_apify(
     return posts[:limit]
 
 
-async def _subreddits_for_keyword(keyword: str) -> set[str]:
-    """Search one keyword and return the DISTINCT (non-blocklisted) subreddits
-    its posts live in."""
-    items = await _run_actor(
-        {
-            "type": "posts",
-            "searches": [keyword],
-            "sort": "relevance",
-            "time": "month",
-            "maxItems": 25,
-            "maxPostCount": 25,
-        }
-    )
-    subs: set[str] = set()
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if str(_first(item, "dataType", "type", default="post")).lower() != "post":
-            continue
-        name = _norm_subreddit(str(_first(item, "communityName", "subreddit", default="")))
-        if name and name.lower() not in _SUBREDDIT_BLOCKLIST:
-            subs.add(name)
-    return subs
-
-
 async def search_subreddits_via_apify(keywords: list[str], limit: int = 12) -> list[dict]:
-    """Discover subreddits relevant to the given keywords. Searches each keyword
-    and counts how many DISTINCT keywords each subreddit appeared for — a sub
-    that recurs across several of your topics is genuinely relevant; a one-off
-    match (r/HeistTeams for a single broad keyword) is noise and gets dropped by
-    the caller's threshold. Blocklisted generic subs are excluded. Ranked by
-    distinct-keyword count. [] on failure or when no token is set."""
+    """Discover subreddits relevant to the given keywords. Searches the keywords
+    (one run) and counts how many DISTINCT keywords each subreddit appeared for —
+    a sub that recurs across several of your topics is genuinely relevant; a
+    one-off match (r/HeistTeams for a single broad keyword) is noise and gets
+    dropped by the caller's threshold. Blocklisted generic subs are excluded.
+    Ranked by distinct-keyword count. [] on failure or when no token is set."""
     if not settings.APIFY_TOKEN:
         return []
     pool = list(dict.fromkeys(k for k in keywords if k))[:_SEED_KEYWORDS]
     if not pool:
         return []
-    sem = asyncio.Semaphore(_CONCURRENCY)
-
-    async def _one(k: str) -> set[str]:
-        async with sem:
-            return await _subreddits_for_keyword(k)
-
-    results = await asyncio.gather(*[_one(k) for k in pool], return_exceptions=True)
+    # One run per keyword's worth of results, but we still need per-keyword
+    # attribution — so tag each result by which query produced it via sourceQuery.
+    items = await _run_queries(pool, max_items=len(pool) * 15)
+    # Map results to their originating keyword using the actor's sourceQuery.
+    by_kw: dict[str, set[str]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = _norm_subreddit(str(_first(item, "subreddit", "communityName", default="")))
+        if not name or name.lower() in _SUBREDDIT_BLOCKLIST:
+            continue
+        kw = str(item.get("sourceQuery") or "")
+        by_kw.setdefault(kw, set()).add(name)
     counts: dict[str, int] = {}
-    for res in results:
-        if isinstance(res, set):
-            for name in res:
-                counts[name] = counts.get(name, 0) + 1
+    for subs in by_kw.values():
+        for name in subs:
+            counts[name] = counts.get(name, 0) + 1
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     return [
         {

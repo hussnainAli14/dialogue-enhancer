@@ -48,7 +48,7 @@ class Settings:
     # APIFY_TOKEN is set, discovery pulls Reddit posts via this actor instead
     # of PRAW, so Reddit works with no OAuth connection.
     APIFY_TOKEN: str = os.getenv("APIFY_TOKEN", "")
-    APIFY_REDDIT_ACTOR: str = os.getenv("APIFY_REDDIT_ACTOR", "trudax~reddit-scraper")
+    APIFY_REDDIT_ACTOR: str = os.getenv("APIFY_REDDIT_ACTOR", "thirdwatch~reddit-scraper")
 
     BLUESKY_HANDLE: str = os.getenv("BLUESKY_HANDLE", "")
     BLUESKY_APP_PASSWORD: str = os.getenv("BLUESKY_APP_PASSWORD", "")

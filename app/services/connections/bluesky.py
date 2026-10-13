@@ -341,8 +341,7 @@ class BlueskyConnector(BaseConnector):
         since: datetime,
         limit: int,
     ) -> list[UniversalPost]:
-        def _work() -> list[UniversalPost]:
-            client = self._client(connection)
+        def _search(client) -> list[UniversalPost]:
             posts: list[UniversalPost] = []
             for keyword in keywords or communities:
                 res = client.app.bsky.feed.search_posts({"q": keyword, "limit": min(limit, 25)})
@@ -381,5 +380,15 @@ class BlueskyConnector(BaseConnector):
                     if len(posts) >= limit:
                         return posts
             return posts
+
+        def _work() -> list[UniversalPost]:
+            # Self-heal: if the stored session has been revoked/expired, re-login
+            # with the stored app password and retry — same pattern as posting.
+            try:
+                return _search(self._client(connection))
+            except Exception as exc:
+                if self._is_expired_error(exc):
+                    return _search(self._fresh_client(connection))
+                raise
 
         return await asyncio.to_thread(_work)

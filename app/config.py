@@ -49,6 +49,10 @@ class Settings:
     # of PRAW, so Reddit works with no OAuth connection.
     APIFY_TOKEN: str = os.getenv("APIFY_TOKEN", "")
     APIFY_REDDIT_ACTOR: str = os.getenv("APIFY_REDDIT_ACTOR", "thirdwatch~reddit-scraper")
+    # X (Twitter) discovery via Apify — X's own API is paid for search, so when
+    # APIFY_TOKEN is set discovery pulls tweets via this actor (keyword search,
+    # returns engagement). Posting to X still needs the paid API (stays manual).
+    APIFY_X_ACTOR: str = os.getenv("APIFY_X_ACTOR", "61RPP7dywgiy0JPD0")
 
     BLUESKY_HANDLE: str = os.getenv("BLUESKY_HANDLE", "")
     BLUESKY_APP_PASSWORD: str = os.getenv("BLUESKY_APP_PASSWORD", "")

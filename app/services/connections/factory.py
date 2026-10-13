@@ -80,13 +80,13 @@ class PlatformFetchService:
         connection = token_store.get_connection(platform)
         connector = get_connector(platform)
 
-        # Reddit via Apify needs no OAuth connection — scrape directly.
-        apify_reddit = platform == "reddit" and settings.APIFY_TOKEN
-        if not apify_reddit and (
+        # Reddit and X discover via Apify with no OAuth connection — fetch directly.
+        apify_discovery = platform in ("reddit", "x") and settings.APIFY_TOKEN
+        if not apify_discovery and (
             not connection or connection.status not in ("connected", "expired")
         ):
             return []
-        if apify_reddit and (not connection or connection.status not in ("connected", "expired")):
+        if apify_discovery and (not connection or connection.status not in ("connected", "expired")):
             try:
                 posts = await connector.fetch_posts(connection, keywords, communities, since, limit)
                 return posts
@@ -127,9 +127,11 @@ class PlatformFetchService:
         connected = [
             c.platform for c in token_store.get_all_connections() if c.status == "connected"
         ]
-        # Reddit works through Apify without a connection row — add it in.
-        if settings.APIFY_TOKEN and "reddit" not in connected:
-            connected.append("reddit")
+        # Reddit and X work through Apify without a connection row — add them in.
+        if settings.APIFY_TOKEN:
+            for p in ("reddit", "x"):
+                if p not in connected:
+                    connected.append(p)
         tasks = [
             self.fetch_from_platform(
                 platform,

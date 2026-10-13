@@ -113,9 +113,10 @@ class DiscoveryWorker:
                 for c in token_store.get_all_connections()
                 if c.status == "connected" and c.platform in PLATFORMS
             }
-            # Reddit is reachable through Apify without an OAuth connection.
+            # Reddit and X are reachable through Apify without an OAuth connection.
             if config_settings.APIFY_TOKEN:
                 connected.add("reddit")
+                connected.add("x")
                 # Discover/refresh the subreddits to scrape from the active
                 # keywords (cached — see method; only re-discovers when stale).
                 await self._refresh_reddit_subreddits(keywords)

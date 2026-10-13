@@ -213,8 +213,13 @@ class XConnector(BaseConnector):
         since: datetime,
         limit: int,
     ) -> list[UniversalPost]:
-        # Searching other users' posts requires X API Basic/Pro. On Free this is
-        # unavailable, so return nothing rather than error out a discovery run.
+        # Searching other users' posts requires X API Basic/Pro (paid). When an
+        # Apify token is set, discover tweets via Apify instead — no X API needed.
+        if settings.APIFY_TOKEN:
+            from app.services.connections.x_apify import fetch_x_via_apify
+
+            return await fetch_x_via_apify(keywords, communities, since, limit)
+        # On Free tier without Apify, return nothing rather than error the run.
         return []
 
 

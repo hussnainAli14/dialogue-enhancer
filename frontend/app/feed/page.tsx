@@ -132,6 +132,7 @@ export default function FeedPage() {
         !c.is_reply_to_me &&
         c.analysis_status === "analysed" &&
         c.draft_count > 0 &&
+        !c.has_posted_reply &&
         !dismissed.has(c.id)
     );
     if (sortBy === "newest") {

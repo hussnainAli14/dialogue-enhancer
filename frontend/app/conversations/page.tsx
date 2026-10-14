@@ -112,6 +112,22 @@ export default function ConversationsPage() {
     return rows;
   }, [data, search, dateFrom, dateTo]);
 
+  // Re-run analysis for a conversation that failed (status "error"). Transient
+  // LLM hiccups strand items in error; this retries the pipeline.
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const handleRetry = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await conversationsApi.generateDrafts(id);
+      showToast("info", "Re-analysing — this takes a moment.");
+      setTimeout(() => refetch(), 2500);
+    } catch {
+      showToast("error", "Could not restart analysis.");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / 20)) : 1;
 
   // A filter change refetches while the old results are still mounted, so both
@@ -264,13 +280,25 @@ export default function ConversationsPage() {
                       {formatDate(c.submitted_at)}
                     </td>
                     <td className="p-4">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => router.push(`/conversations/${c.id}`)}
-                      >
-                        View
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {c.analysis_status === "error" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={retryingId === c.id}
+                            onClick={() => handleRetry(c.id)}
+                          >
+                            Retry
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => router.push(`/conversations/${c.id}`)}
+                        >
+                          View
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -294,13 +322,25 @@ export default function ConversationsPage() {
                 </p>
                 <div className="mt-3 flex items-center justify-between">
                   <RelevanceScore score={c.relevance_score} />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => router.push(`/conversations/${c.id}`)}
-                  >
-                    View
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {c.analysis_status === "error" && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={retryingId === c.id}
+                        onClick={() => handleRetry(c.id)}
+                      >
+                        Retry
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => router.push(`/conversations/${c.id}`)}
+                    >
+                      View
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}

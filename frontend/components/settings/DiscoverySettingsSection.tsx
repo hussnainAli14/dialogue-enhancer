@@ -155,20 +155,21 @@ export default function DiscoverySettingsSection() {
 
           <div>
             <label className="text-xs text-text-secondary">
-              Minimum engagement: {((settings.min_engagement_score ?? 0) * 100).toFixed(0)}%
+              Minimum engagement: {((settings.min_engagement_score ?? 0) * 100).toFixed(1)}%
             </label>
             <input
               type="range"
               min={0}
-              max={1}
-              step={0.05}
+              max={0.2}
+              step={0.001}
               value={settings.min_engagement_score ?? 0}
               onChange={(e) => set("min_engagement_score", Number(e.target.value))}
               className="w-full accent-accent"
             />
             <p className="mt-1 text-xs text-text-muted">
               Skip posts below this engagement level (likes/comments/views, normalised per
-              platform), so you do not reply to dead, low-audience posts. 0% keeps everything.
+              platform), so you do not reply to dead, low-audience posts. Most posts score
+              under 5%, so fine steps (0.1%) let you filter precisely. 0% keeps everything.
             </p>
           </div>
 

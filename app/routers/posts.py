@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, UploadFile
 
+from app.database import get_supabase
 from app.envelope import fail, ok
 from app.services import token_store
 from app.services.connections.base import PostMedia
@@ -19,6 +20,81 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 # Max images accepted per post (Bluesky/Mastodon both allow 4).
 MAX_IMAGES = 4
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB per image
+
+
+@router.get("/history")
+async def posted_history(page: int = 1, page_size: int = 50):
+    """Everything you've published, newest first: standalone Compose posts and
+    posted replies, each with platform, text, and a link to the live post."""
+    try:
+        supabase = get_supabase()
+        items: list[dict] = []
+
+        # Standalone Compose posts.
+        try:
+            for p in (
+                supabase.table("published_posts")
+                .select("*")
+                .order("created_at", desc=True)
+                .execute()
+            ).data or []:
+                items.append(
+                    {
+                        "type": "post",
+                        "platform": p.get("platform"),
+                        "content": p.get("content") or "",
+                        "url": p.get("post_url"),
+                        "posted_at": p.get("created_at"),
+                    }
+                )
+        except Exception:
+            pass
+
+        # Posted replies — join drafts to their conversation for the platform.
+        posted_drafts = (
+            supabase.table("response_drafts")
+            .select("*")
+            .eq("status", "posted")
+            .order("posted_at", desc=True)
+            .execute()
+        ).data or []
+        conv_ids = list({d["conversation_id"] for d in posted_drafts if d.get("conversation_id")})
+        convs: dict[str, dict] = {}
+        if conv_ids:
+            for c in (
+                supabase.table("conversations")
+                .select("id, platform, post_url, post_author")
+                .in_("id", conv_ids)
+                .execute()
+            ).data or []:
+                convs[c["id"]] = c
+        for d in posted_drafts:
+            conv = convs.get(d.get("conversation_id"), {})
+            items.append(
+                {
+                    "type": "reply",
+                    "platform": conv.get("platform"),
+                    "content": d.get("edited_content") or d.get("content") or "",
+                    # the reply's own link if captured, else the post it replied to
+                    "url": d.get("posted_url") or conv.get("post_url"),
+                    "posted_at": d.get("posted_at"),
+                    "in_reply_to": conv.get("post_author"),
+                }
+            )
+
+        items.sort(key=lambda x: x.get("posted_at") or "", reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        return ok(
+            {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "items": items[start : start + page_size],
+            }
+        )
+    except Exception as exc:
+        return fail(f"Failed to load posted history: {exc}", 500)
 
 
 @router.get("/targets")
@@ -126,6 +202,18 @@ async def create_post(
         try:
             result = await publish_post(platform, text, media=media)
             results.append({"platform": platform, "success": True, "result": result})
+            # Record the published post so it shows in Posted history. Best-effort:
+            # never let a logging failure affect the actual publish result.
+            try:
+                get_supabase().table("published_posts").insert(
+                    {
+                        "platform": platform,
+                        "content": text,
+                        "post_url": (result or {}).get("url") or (result or {}).get("post_url"),
+                    }
+                ).execute()
+            except Exception:
+                pass
         except Exception as exc:
             results.append({"platform": platform, "success": False, "error": str(exc)})
 

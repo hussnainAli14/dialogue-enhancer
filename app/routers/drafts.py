@@ -34,6 +34,19 @@ def _update_draft(draft_id: str, fields: dict) -> dict:
     ).data[0]
 
 
+def _store_posted_url(draft_id: str, url: str | None) -> None:
+    """Best-effort: save the live URL of a posted reply. Isolated so a missing
+    posted_url column (migration not yet applied) never fails the post itself."""
+    if not url:
+        return
+    try:
+        get_supabase().table("response_drafts").update({"posted_url": url}).eq(
+            "id", draft_id
+        ).execute()
+    except Exception:
+        pass
+
+
 @router.post("/{draft_id}/approve")
 async def approve_draft(draft_id: str):
     try:
@@ -138,7 +151,9 @@ async def post_draft(draft_id: str):
         result = await publish_reply(draft["conversation_id"], final_content)
     except Exception as exc:
         return fail(f"Failed to post reply: {exc}", 400)
+    posted_url = (result or {}).get("url") or (result or {}).get("post_url")
     updated = _update_draft(draft_id, {"status": "posted", "posted_at": _now()})
+    _store_posted_url(draft_id, posted_url)
     log_feedback(
         draft_id, draft["conversation_id"], "posted",
         original_content=draft["content"], final_content=final_content,
@@ -159,9 +174,11 @@ async def approve_and_post(draft_id: str):
         result = await publish_reply(draft["conversation_id"], draft["content"])
     except Exception as exc:
         return fail(f"Not posted — {exc}", 400)
+    posted_url = (result or {}).get("url") or (result or {}).get("post_url")
     updated = _update_draft(
         draft_id, {"status": "posted", "approved_at": _now(), "posted_at": _now()}
     )
+    _store_posted_url(draft_id, posted_url)
     log_feedback(
         draft_id, draft["conversation_id"], "approved",
         original_content=draft["content"], final_content=draft["content"],

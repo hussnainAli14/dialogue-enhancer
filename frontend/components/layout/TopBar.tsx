@@ -7,6 +7,8 @@ const TITLES: Record<string, string> = {
   "/feed": "Today's Feed",
   "/conversations": "Conversations",
   "/submit": "Submit Conversation",
+  "/compose": "Compose Post",
+  "/posted": "Posted",
   "/knowledge": "Knowledge Base",
   "/history": "Feedback History",
   "/community": "Community Manager",

@@ -224,6 +224,22 @@ export interface ComposeCandidate {
   value_explanation: string | null;
 }
 
+export interface PostedItem {
+  type: "post" | "reply";
+  platform: string | null;
+  content: string;
+  url: string | null;
+  posted_at: string | null;
+  in_reply_to?: string | null;
+}
+
+export interface PostedHistoryResponse {
+  page: number;
+  page_size: number;
+  total: number;
+  items: PostedItem[];
+}
+
 export const postsApi = {
   getTargets: () =>
     unwrap<{ targets: PostTarget[] }>(client.get("/posts/targets")),
@@ -262,6 +278,11 @@ export const postsApi = {
       })
     );
   },
+
+  getHistory: (page = 1, page_size = 50) =>
+    unwrap<PostedHistoryResponse>(
+      client.get("/posts/history", { params: { page, page_size } })
+    ),
 };
 
 export const connectionsApi = {

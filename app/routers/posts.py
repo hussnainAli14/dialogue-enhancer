@@ -23,9 +23,10 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB per image
 
 
 @router.get("/history")
-async def posted_history(page: int = 1, page_size: int = 50):
+async def posted_history(page: int = 1, page_size: int = 50, kind: str | None = None):
     """Everything you've published, newest first: standalone Compose posts and
-    posted replies, each with platform, text, and a link to the live post."""
+    posted replies, each with platform, text, and a link to the live post.
+    `kind` optionally filters to "post" (standalone) or "reply"."""
     try:
         supabase = get_supabase()
         items: list[dict] = []
@@ -82,6 +83,8 @@ async def posted_history(page: int = 1, page_size: int = 50):
                 }
             )
 
+        if kind in ("post", "reply"):
+            items = [it for it in items if it["type"] == kind]
         items.sort(key=lambda x: x.get("posted_at") or "", reverse=True)
         total = len(items)
         start = (page - 1) * page_size

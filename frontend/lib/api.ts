@@ -279,9 +279,9 @@ export const postsApi = {
     );
   },
 
-  getHistory: (page = 1, page_size = 50) =>
+  getHistory: (page = 1, page_size = 50, kind?: "post" | "reply") =>
     unwrap<PostedHistoryResponse>(
-      client.get("/posts/history", { params: { page, page_size } })
+      client.get("/posts/history", { params: { page, page_size, kind } })
     ),
 };
 

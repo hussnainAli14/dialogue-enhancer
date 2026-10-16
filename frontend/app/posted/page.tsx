@@ -16,13 +16,18 @@ export default function PostedPage() {
   const [items, setItems] = useState<PostedItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [kind, setKind] = useState<"all" | "post" | "reply">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await postsApi.getHistory(page, PAGE_SIZE);
+      const res = await postsApi.getHistory(
+        page,
+        PAGE_SIZE,
+        kind === "all" ? undefined : kind
+      );
       setItems(res.items);
       setTotal(res.total);
       setError(null);
@@ -31,7 +36,7 @@ export default function PostedPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, kind]);
 
   useEffect(() => {
     load();
@@ -39,32 +44,52 @@ export default function PostedPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  if (loading && items.length === 0) {
-    return (
-      <div className="flex justify-center py-20">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
   if (error) {
     return <ErrorState title="Could not load posted history" description={error} onRetry={load} />;
   }
 
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        icon={<Send className="h-12 w-12" />}
-        title="Nothing posted yet"
-        description="Posts you publish from Compose, and replies you post, will show up here with a link to the live post."
-      />
-    );
-  }
+  const filters: { key: "all" | "post" | "reply"; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "post", label: "Posts" },
+    { key: "reply", label: "Replies" },
+  ];
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-text-secondary">{total} published</p>
+      <div className="flex items-center gap-2">
+        {filters.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => {
+              setKind(f.key);
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+              kind === f.key
+                ? "bg-accent text-white"
+                : "bg-surface-raised text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+        {!loading && (
+          <span className="ml-auto text-sm text-text-secondary">{total} published</span>
+        )}
+      </div>
 
+      {loading && items.length === 0 ? (
+        <div className="flex justify-center py-20">
+          <LoadingSpinner size="lg" />
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Send className="h-12 w-12" />}
+          title="Nothing here yet"
+          description="Posts you publish from Compose, and replies you post, will show up here with a link to the live post."
+        />
+      ) : (
+        <>
       <div className="space-y-3">
         {items.map((it, i) => (
           <div
@@ -124,6 +149,8 @@ export default function PostedPage() {
             Next
           </Button>
         </div>
+      )}
+        </>
       )}
     </div>
   );

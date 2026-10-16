@@ -90,8 +90,10 @@ export default function ConversationsPage() {
   };
 
   const { data, loading, error, refetch } = useConversations({
-    // "commented" is not an analysis_status — it is filtered client-side below.
+    // "commented" is not an analysis_status — it maps to the backend `posted`
+    // filter (conversations with a posted reply), resolved across all pages.
     status: statusFilter && statusFilter !== "commented" ? statusFilter : undefined,
+    posted: statusFilter === "commented" ? true : undefined,
     platform: platformFilter || undefined,
     page,
     page_size: 20,
@@ -110,9 +112,8 @@ export default function ConversationsPage() {
     }
     if (dateFrom) rows = rows.filter((c) => c.submitted_at >= dateFrom);
     if (dateTo) rows = rows.filter((c) => c.submitted_at <= dateTo + "T23:59:59");
-    if (statusFilter === "commented") rows = rows.filter((c) => c.has_posted_reply);
     return rows;
-  }, [data, search, dateFrom, dateTo, statusFilter]);
+  }, [data, search, dateFrom, dateTo]);
 
   // Re-run analysis for a conversation that failed (status "error"). Transient
   // LLM hiccups strand items in error; this retries the pipeline.

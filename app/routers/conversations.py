@@ -46,6 +46,7 @@ async def submit_conversation(body: ConversationSubmit, background_tasks: Backgr
 async def list_conversations(
     status: str | None = Query(None),
     platform: str | None = Query(None),
+    posted: bool | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -56,6 +57,27 @@ async def list_conversations(
             query = query.eq("analysis_status", status)
         if platform:
             query = query.eq("platform", platform)
+        # "Commented" filter: restrict to conversations that have a posted reply.
+        # Posted state lives on response_drafts, so resolve those ids first and
+        # filter the conversation query by them (across all pages, not just one).
+        if posted:
+            posted_conv_ids = sorted(
+                {
+                    d["conversation_id"]
+                    for d in (
+                        supabase.table("response_drafts")
+                        .select("conversation_id")
+                        .eq("status", "posted")
+                        .execute()
+                    ).data
+                    or []
+                }
+            )
+            if not posted_conv_ids:
+                return ok(
+                    {"page": page, "page_size": page_size, "total": 0, "conversations": []}
+                )
+            query = query.in_("id", posted_conv_ids)
 
         start = (page - 1) * page_size
         response = (

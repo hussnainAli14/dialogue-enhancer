@@ -183,6 +183,7 @@ export interface ConversationSubmitData {
 export interface ConversationFilters {
   status?: string;
   platform?: string;
+  posted?: boolean;
   page?: number;
   page_size?: number;
 }

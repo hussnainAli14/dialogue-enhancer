@@ -98,6 +98,16 @@ class Scorer:
         from app.services.author_profile import get_author_profile
 
         profile = await get_author_profile()
+        # Fold in what the author repeatedly dismisses, so similar posts rank
+        # lower. Best-effort — never block scoring on it.
+        try:
+            from app.services.feedback_profile import discovery_preferences
+
+            dismiss_note = discovery_preferences()
+            if dismiss_note:
+                profile = f"{profile}\n\n{dismiss_note}"
+        except Exception:
+            pass
         prompt = SCORING_PROMPT.format(
             profile=profile, posts="\n".join(_format_post(p) for p in posts)
         )

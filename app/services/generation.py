@@ -21,6 +21,17 @@ from app.services.retrieval import (
 
 METADATA_DELIMITER = "---METADATA---"
 
+
+def _learned_preferences() -> str:
+    """The author's demonstrated draft preferences (approved voice, edits,
+    rejection patterns). Best-effort — never block generation on it."""
+    try:
+        from app.services.feedback_profile import draft_preferences
+
+        return draft_preferences()
+    except Exception:
+        return ""
+
 # Hard character limits per platform for a single post/reply. Drafts are asked to
 # stay safely under these so posting doesn't get rejected.
 PLATFORM_CHAR_LIMITS = {"bluesky": 300, "mastodon": 500}
@@ -52,7 +63,12 @@ def _parse_draft(raw: str) -> tuple[str, dict]:
 
 
 async def _generate_one(
-    style: str, conversation_text: str, analysis_json: str, context_block: str, platform: str
+    style: str,
+    conversation_text: str,
+    analysis_json: str,
+    context_block: str,
+    platform: str,
+    learned_preferences: str = "",
 ) -> dict:
     llm = get_llm(temperature=0.7)
     prompt = GENERATION_PROMPT.format(
@@ -60,6 +76,7 @@ async def _generate_one(
         analysis=analysis_json,
         context_block=context_block,
         style_instruction=STYLE_INSTRUCTIONS[style],
+        learned_preferences=learned_preferences,
         length_instruction=_length_instruction(platform),
     )
     raw = await call_llm_with_retry(llm, prompt)
@@ -92,7 +109,7 @@ def _compose_length_instruction(char_limit: int | None) -> str:
 
 
 async def _generate_one_compose(
-    style: str, seed: dict, context_block: str, char_limit: int | None
+    style: str, seed: dict, context_block: str, char_limit: int | None, learned_preferences: str = ""
 ) -> dict:
     llm = get_llm(temperature=0.7)
     prompt = COMPOSE_PROMPT.format(
@@ -102,6 +119,7 @@ async def _generate_one_compose(
         invite=seed.get("invite", "") or "(not specified)",
         context_block=context_block,
         style_instruction=STYLE_INSTRUCTIONS[style],
+        learned_preferences=learned_preferences,
         length_instruction=_compose_length_instruction(char_limit),
     )
     raw = await call_llm_with_retry(llm, prompt)
@@ -131,9 +149,11 @@ async def generate_compose_candidates(seed: dict, char_limit: int | None = None)
         except Exception:
             pass
 
+    learned = _learned_preferences()
+
     def make_branch(style: str):
         async def branch(_):
-            return await _generate_one_compose(style, seed, context_block, char_limit)
+            return await _generate_one_compose(style, seed, context_block, char_limit, learned)
 
         return RunnableLambda(branch)
 
@@ -158,11 +178,12 @@ async def generate_drafts(
     platform: str = "",
 ) -> None:
     analysis_json = json.dumps(analysis.model_dump(), indent=2)
+    learned = _learned_preferences()
 
     def make_branch(style: str):
         async def branch(_):
             return await _generate_one(
-                style, conversation_text, analysis_json, retrieval.context_block, platform
+                style, conversation_text, analysis_json, retrieval.context_block, platform, learned
             )
 
         return RunnableLambda(branch)

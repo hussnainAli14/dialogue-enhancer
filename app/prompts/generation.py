@@ -55,6 +55,8 @@ RELEVANT MATERIAL FROM THE AUTHOR'S OWN WRITING (ground every claim in this):
 STYLE INSTRUCTION FOR THIS DRAFT:
 {style_instruction}
 
+{learned_preferences}
+
 WRITING PRINCIPLES:
 - Write in first person as the author, in the author's own voice from the retrieved material.
 - Ground every claim in the retrieved material above — do not invent ideas the author has not written about.
@@ -95,6 +97,8 @@ RELEVANT MATERIAL FROM THE AUTHOR'S OWN WRITING (ground the voice and any claims
 
 STYLE INSTRUCTION FOR THIS POST:
 {style_instruction}
+
+{learned_preferences}
 
 WRITING PRINCIPLES:
 - Write in first person as the author — an original standalone post, not a reply.

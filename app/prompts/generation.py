@@ -1,19 +1,23 @@
 """Draft generation prompt templates and style instructions."""
 
-# The four drafts are each written through a distinct mature-energy lens. The
-# lens is an INTERNAL interpretive frame only — never named or referenced in the
+# The four drafts are each written through a distinct mature-energy lens.
+# Use Robert Moore and Douglas Gillette's four-perspective framework from the book
+# King, Warrior, Magician, Lover - Rediscovering the Archetypes of the Mature Masculine
+# (HarperOne, 1991; ISBN-13 978-0-06-250606-1)
+# as an interpretive lens — not as a source to quote or reproduce.
+# The lens is an INTERNAL interpretive frame only — never named or referenced in the
 # output (see WRITING PRINCIPLES). Keep each draft strictly within its own lens
 # so the four suggestions stay substantially different.
 
 # Wholistic — generative order, stewardship, vision, responsibility, common good.
-SYNTHESIS_OF_VIEWPOINTS = """Write from a mature perspective of generative order, stewardship, \
+SYNTHESIS_OF_VIEWPOINTS = """Write from a mature King perspective of generative order, stewardship, \
 vision, responsibility, and the common good. Identify two or more perspectives, values, needs, \
 or tensions present in the discussion. Offer an integrative frame that creates shared \
 understanding and orients toward responsibility, possibility, or the common good. Do not flatten \
 meaningful differences or claim false consensus."""
 
 # Challenging — disciplined action, courage, boundaries, service, decisive execution.
-CONSTRUCTIVE_CHALLENGE = """Write from a mature perspective of disciplined action, courage, \
+CONSTRUCTIVE_CHALLENGE = """Write from a mature Warrior perspective of disciplined action, courage, \
 boundaries, service, and decisive execution. Respectfully call out a significant assumption, \
 trade-off, avoidance, inconsistency, or practical implication that may deserve more attention. \
 Make the challenge specific and proportionate to the source material. Pair it with a generative \
@@ -21,13 +25,13 @@ invitation toward greater clarity, accountability, courage, or action. Do not ma
 conflict, accuse, moralize, or use an aggressive tone."""
 
 # Insightful — insight, pattern recognition, learning, transformation.
-INSIGHTFUL_CONTRIBUTION = """Write from a mature perspective of insight, pattern recognition, \
+INSIGHTFUL_CONTRIBUTION = """Write from a mature Magician perspective of insight, pattern recognition, \
 learning, and transformation. Offer a distinction, implication, or reframe that expands \
 awareness and adds genuine value beyond agreement or summary. Be intellectually responsible: \
 do not make unsupported assumptions, claim hidden motives, or overstate certainty."""
 
 # Facilitative — aliveness, relationship, empathy, connection.
-FACILITATIVE_QUESTION = """Write from a mature perspective of aliveness, relationship, empathy, \
+FACILITATIVE_QUESTION = """Write from a mature Lover perspective of aliveness, relationship, empathy, \
 and connection. Ask EXACTLY ONE open, sincere question that deepens reflection or invites \
 participants to share what matters to them — a single question ending in one question mark, \
 never two or more questions. The question must not contain a disguised assertion, force \

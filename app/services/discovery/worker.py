@@ -18,6 +18,13 @@ from app.services.discovery.scorer import Scorer
 from app.services.discovery.submitter import Submitter
 
 
+# Order in which platforms claim the daily submission cap. Higher-value, higher-
+# engagement platforms come first so they fill the feed before high-volume,
+# low-engagement ones (Mastodon/Bluesky) can crowd it out. Platforms not listed
+# are processed last.
+PLATFORM_PRIORITY = ["reddit", "x", "youtube", "mastodon", "bluesky"]
+
+
 def _now():
     return datetime.now(timezone.utc)
 
@@ -173,59 +180,77 @@ class DiscoveryWorker:
                 "posts_duplicated": result.posts_duplicated,
             })
 
-            # STEP 5 — score
-            scored = await self.scorer.score_batch(new_posts, settings)
-            for sp in scored:
-                self._update_post(sp.post, {
-                    "relevance_score": sp.final_score,
-                    "relevance_reasoning": sp.reasoning,
-                    "status": "scored",
-                })
-            result.posts_scored = len(scored)
-            self._update_run(run_id, {"posts_scored": result.posts_scored})
-
-            # STEP 6 — filter + rank
-            # Keep only posts that clear both the relevance floor and the
-            # engagement floor (skips dead, low-audience posts), then rank by a
-            # blend of relevance and engagement so busier posts come first.
+            # STEPS 5-7 — score, filter/rank, and submit PLATFORM BY PLATFORM in
+            # priority order (reddit, then x, youtube, mastodon, bluesky). Higher-
+            # value platforms get first claim on the daily cap, so Reddit/X fill
+            # the feed before high-volume, low-value Mastodon/Bluesky can crowd it.
             ew = settings.engagement_weight
-            passing = [
-                s for s in scored
-                if s.final_score >= settings.min_relevance_score
-                and (s.post.engagement_score or 0) >= settings.min_engagement_score
-            ]
-            passing.sort(
-                key=lambda s: s.final_score * (1 - ew) + (s.post.engagement_score or 0) * ew,
-                reverse=True,
-            )
-            remaining = max(0, settings.max_conversations_per_day - store.daily_conversation_count())
-            to_submit = passing[:remaining]
-            submit_keys = {(s.post.platform, s.post.post_id) for s in to_submit}
-            # Everything scored but not chosen for submission = filtered_out.
+            scored_total = 0
             filtered_count = 0
-            for s in scored:
-                if (s.post.platform, s.post.post_id) not in submit_keys:
-                    self._update_post(s.post, {"status": "filtered_out"})
-                    filtered_count += 1
-            result.posts_filtered = filtered_count
-
-            # STEP 7 — submit to Module 7
             submitted = 0
-            for s in to_submit:
-                # Re-check the daily limit before EACH submit (DB-level, concurrency-safe).
-                if store.daily_conversation_count() >= settings.max_conversations_per_day:
-                    self._update_post(s.post, {"status": "filtered_out"})
-                    continue
+
+            def _priority(platform: str) -> int:
                 try:
-                    conversation_id = await self.submitter.submit(s.post)
-                    self._update_post(s.post, {
-                        "status": "submitted",
-                        "conversation_id": conversation_id,
+                    return PLATFORM_PRIORITY.index(platform)
+                except ValueError:
+                    return len(PLATFORM_PRIORITY)  # unknown platforms last
+
+            platforms_present = sorted(
+                {p.platform for p in new_posts}, key=_priority
+            )
+
+            for platform in platforms_present:
+                batch = [p for p in new_posts if p.platform == platform]
+                scored = await self.scorer.score_batch(batch, settings)
+                for sp in scored:
+                    self._update_post(sp.post, {
+                        "relevance_score": sp.final_score,
+                        "relevance_reasoning": sp.reasoning,
+                        "status": "scored",
                     })
-                    submitted += 1
-                except Exception as exc:
-                    self._update_post(s.post, {"status": "error"})
-                    log_task("analysis", run_id, "failed", f"Submit failed: {exc}")
+                scored_total += len(scored)
+                self._update_run(run_id, {"posts_scored": scored_total})
+
+                # Keep only posts clearing both floors, ranked within this
+                # platform by a blend of relevance and engagement.
+                passing = [
+                    s for s in scored
+                    if s.final_score >= settings.min_relevance_score
+                    and (s.post.engagement_score or 0) >= settings.min_engagement_score
+                ]
+                passing.sort(
+                    key=lambda s: s.final_score * (1 - ew) + (s.post.engagement_score or 0) * ew,
+                    reverse=True,
+                )
+                remaining = max(
+                    0, settings.max_conversations_per_day - store.daily_conversation_count()
+                )
+                to_submit = passing[:remaining]
+                submit_keys = {(s.post.platform, s.post.post_id) for s in to_submit}
+                for s in scored:
+                    if (s.post.platform, s.post.post_id) not in submit_keys:
+                        self._update_post(s.post, {"status": "filtered_out"})
+                        filtered_count += 1
+
+                for s in to_submit:
+                    # Re-check the daily limit before EACH submit (DB-level, concurrency-safe).
+                    if store.daily_conversation_count() >= settings.max_conversations_per_day:
+                        self._update_post(s.post, {"status": "filtered_out"})
+                        filtered_count += 1
+                        continue
+                    try:
+                        conversation_id = await self.submitter.submit(s.post)
+                        self._update_post(s.post, {
+                            "status": "submitted",
+                            "conversation_id": conversation_id,
+                        })
+                        submitted += 1
+                    except Exception as exc:
+                        self._update_post(s.post, {"status": "error"})
+                        log_task("analysis", run_id, "failed", f"Submit failed: {exc}")
+
+            result.posts_scored = scored_total
+            result.posts_filtered = filtered_count
             result.posts_submitted = submitted
 
             # STEP 8 — complete

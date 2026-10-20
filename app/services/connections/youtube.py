@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
@@ -17,6 +18,11 @@ SCOPES = [
 ]
 QUOTA_DAILY = 10000
 QUOTA_STOP_THRESHOLD = 500  # stop fetching when fewer than this many units likely remain
+# YouTube search.list costs 100 units and the daily quota is only 10,000 — so at
+# most ~100 searches/day across ALL runs. The per-run quota guard can't see what
+# earlier runs spent, so cap how many keywords each run searches and rotate
+# through them. ~5 keywords ≈ 500-700 units/run, leaving room for many runs/day.
+MAX_SEARCH_KEYWORDS_PER_RUN = 5
 
 
 def _flow():
@@ -264,7 +270,12 @@ class YouTubeConnector(BaseConnector):
             self._quota_used = 0
             posts: list[UniversalPost] = []
             published_after = since.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-            for keyword in keywords:
+            # Cap + rotate keywords so a run can't exhaust the shared daily quota
+            # (each search = 100 units of only 10,000/day across all runs).
+            search_keywords = list(dict.fromkeys(k for k in keywords if k))
+            if len(search_keywords) > MAX_SEARCH_KEYWORDS_PER_RUN:
+                search_keywords = random.sample(search_keywords, MAX_SEARCH_KEYWORDS_PER_RUN)
+            for keyword in search_keywords:
                 if self._quota_low():
                     log_event("youtube", "fetch_failed", "Quota threshold reached — stopping.")
                     break

@@ -62,8 +62,9 @@ for _o in _settings.CORS_ALLOW_ORIGINS.split(","):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_origins),
-    # Vercel previews + the LinkedIn clipper (chrome-extension://<id>).
-    allow_origin_regex=r"(https://.*\.vercel\.app|chrome-extension://.+)",
+    # Vercel previews, the numina.team domain + any subdomain (e.g.
+    # app.numina.team), and the browser clipper (chrome-extension://<id>).
+    allow_origin_regex=r"(https://([a-z0-9-]+\.)*vercel\.app|https://([a-z0-9-]+\.)*numina\.team|chrome-extension://.+)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -196,7 +196,12 @@ class YouTubeConnector(BaseConnector):
             yt = self._youtube(self._credentials(conn))
             out: list[DiscoveredCommunity] = []
             seen: set[str] = set()
-            for kw in keywords:
+            # Each channel search costs 100 of the 10,000 daily units — cap +
+            # rotate so community discovery can't exhaust the shared quota.
+            kws = list(dict.fromkeys(k for k in keywords if k))
+            if len(kws) > MAX_SEARCH_KEYWORDS_PER_RUN:
+                kws = random.sample(kws, MAX_SEARCH_KEYWORDS_PER_RUN)
+            for kw in kws:
                 res = yt.search().list(
                     part="snippet", q=kw, type="channel", maxResults=min(limit, 10)
                 ).execute()

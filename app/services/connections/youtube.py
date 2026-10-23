@@ -274,13 +274,29 @@ class YouTubeConnector(BaseConnector):
             yt = self._youtube(self._credentials(connection))
             self._quota_used = 0
             posts: list[UniversalPost] = []
-            published_after = since.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-            # Cap + rotate keywords so a run can't exhaust the shared daily quota
-            # (each search = 100 units of only 10,000/day across all runs).
+            seen: set[str] = set()
+            since_utc = since.astimezone(timezone.utc)
+            published_after = since_utc.isoformat().replace("+00:00", "Z")
+
+            # STEP 1 — recent uploads from approved channels first. Pulling a
+            # channel's uploads costs ~1 unit each (vs 100 for a keyword search),
+            # so this is both cheaper and exactly the content the user curated in
+            # Community Manager. `communities` holds the approved channel IDs.
+            channel_ids = list(dict.fromkeys(c for c in communities if c))
+            if channel_ids:
+                posts.extend(
+                    self._videos_from_channels(yt, channel_ids, since_utc, limit, seen)
+                )
+
+            # STEP 2 — keyword search fills any remaining room. Cap + rotate the
+            # keywords so a run can't exhaust the shared daily quota (each search
+            # costs 100 units of only 10,000/day across all runs).
             search_keywords = list(dict.fromkeys(k for k in keywords if k))
             if len(search_keywords) > MAX_SEARCH_KEYWORDS_PER_RUN:
                 search_keywords = random.sample(search_keywords, MAX_SEARCH_KEYWORDS_PER_RUN)
             for keyword in search_keywords:
+                if len(posts) >= limit:
+                    break
                 if self._quota_low():
                     log_event("youtube", "fetch_failed", "Quota threshold reached — stopping.")
                     break
@@ -299,44 +315,109 @@ class YouTubeConnector(BaseConnector):
                 self._quota_used += 100  # search.list costs 100 units
                 for item in search.get("items", []):
                     video_id = item["id"].get("videoId")
-                    if not video_id:
+                    if not video_id or video_id in seen:
                         continue
+                    seen.add(video_id)
                     snippet = item["snippet"]
-                    created = _parse_dt(snippet.get("publishedAt"))
-                    stats, thread = self._video_details(yt, video_id)
-                    comment_count = int(stats.get("commentCount", 0) or 0)
-                    like_count = int(stats.get("likeCount", 0) or 0)
-                    view_count = int(stats.get("viewCount", 0) or 0)
-                    engagement = (
-                        min(comment_count / 100, 1) * 0.4
-                        + min(like_count / 1000, 1) * 0.3
-                        + min(view_count / 10000, 1) * 0.3
-                    )
-                    posts.append(
-                        UniversalPost(
-                            platform="youtube",
-                            post_id=video_id,
-                            post_url=f"https://youtube.com/watch?v={video_id}",
-                            author_name=snippet.get("channelTitle", ""),
-                            author_id=snippet.get("channelId", ""),
-                            title=snippet.get("title"),
-                            content=snippet.get("description", ""),
-                            thread_content=thread,
-                            community_name=snippet.get("channelTitle"),
-                            community_id=snippet.get("channelId"),
-                            posted_at=created,
-                            comment_count=comment_count,
-                            engagement_score=round(engagement, 4),
-                            raw_data={"video_id": video_id},
-                        )
-                    )
+                    posts.append(self._build_video_post(yt, video_id, snippet))
                     if len(posts) >= limit:
                         break
+
             log_event("youtube", "fetch_success", f"Quota used ~{self._quota_used} units.",
                       {"quota_used": self._quota_used})
             return posts
 
         return await asyncio.to_thread(_work)
+
+    def _videos_from_channels(
+        self, yt, channel_ids: list[str], since_utc: datetime, limit: int, seen: set[str]
+    ) -> list[UniversalPost]:
+        """Recent uploads from approved channels — ~1 quota unit per channel."""
+        posts: list[UniversalPost] = []
+        # Resolve each channel's uploads playlist (one call covers up to 50 IDs).
+        uploads: dict[str, str] = {}
+        try:
+            for i in range(0, len(channel_ids), 50):
+                chunk = channel_ids[i : i + 50]
+                resp = (
+                    yt.channels()
+                    .list(part="contentDetails", id=",".join(chunk), maxResults=50)
+                    .execute()
+                )
+                self._quota_used += 1
+                for item in resp.get("items", []):
+                    playlist = (
+                        item.get("contentDetails", {})
+                        .get("relatedPlaylists", {})
+                        .get("uploads")
+                    )
+                    if playlist:
+                        uploads[item["id"]] = playlist
+        except Exception:
+            return posts
+
+        for playlist_id in uploads.values():
+            if len(posts) >= limit or self._quota_low():
+                break
+            try:
+                resp = (
+                    yt.playlistItems()
+                    .list(part="snippet", playlistId=playlist_id, maxResults=min(limit, 10))
+                    .execute()
+                )
+                self._quota_used += 1
+            except Exception:
+                continue
+            for item in resp.get("items", []):
+                snippet = item.get("snippet", {})
+                video_id = snippet.get("resourceId", {}).get("videoId")
+                if not video_id or video_id in seen:
+                    continue
+                if _parse_dt(snippet.get("publishedAt")) < since_utc:
+                    continue  # older than the lookback window
+                seen.add(video_id)
+                # playlistItems name the uploader via videoOwnerChannel*.
+                author_name = snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle", "")
+                author_id = snippet.get("videoOwnerChannelId") or snippet.get("channelId", "")
+                posts.append(
+                    self._build_video_post(yt, video_id, snippet, author_name, author_id)
+                )
+                if len(posts) >= limit:
+                    break
+        return posts
+
+    def _build_video_post(
+        self, yt, video_id: str, snippet: dict,
+        author_name: str | None = None, author_id: str | None = None,
+    ) -> UniversalPost:
+        """Build a UniversalPost for a video, fetching stats + top comments."""
+        stats, thread = self._video_details(yt, video_id)
+        comment_count = int(stats.get("commentCount", 0) or 0)
+        like_count = int(stats.get("likeCount", 0) or 0)
+        view_count = int(stats.get("viewCount", 0) or 0)
+        engagement = (
+            min(comment_count / 100, 1) * 0.4
+            + min(like_count / 1000, 1) * 0.3
+            + min(view_count / 10000, 1) * 0.3
+        )
+        name = author_name if author_name is not None else snippet.get("channelTitle", "")
+        cid = author_id if author_id is not None else snippet.get("channelId", "")
+        return UniversalPost(
+            platform="youtube",
+            post_id=video_id,
+            post_url=f"https://youtube.com/watch?v={video_id}",
+            author_name=name,
+            author_id=cid,
+            title=snippet.get("title"),
+            content=snippet.get("description", ""),
+            thread_content=thread,
+            community_name=name,
+            community_id=cid,
+            posted_at=_parse_dt(snippet.get("publishedAt")),
+            comment_count=comment_count,
+            engagement_score=round(engagement, 4),
+            raw_data={"video_id": video_id},
+        )
 
     def _quota_low(self) -> bool:
         return (QUOTA_DAILY - self._quota_used) < QUOTA_STOP_THRESHOLD
